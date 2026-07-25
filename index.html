@@ -1,0 +1,1318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Frequent Flyer">
+<title>Frequent Flyer — Scorekeeper</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --surface:#fff; --surface2:#eef1f6; --line:#d7dde7;
+    --ink:#16202e; --ink2:#5b6879; --ink3:#8a95a5;
+    --navy:#1f3f78; --navy2:#2b5296; --orange:#e07b2c;
+    --coach:#0f9d6e; --first:#7b2d94;
+    --good:#12805c; --bad:#c0392b; --onGood:#fff;
+    --shadow:0 1px 2px rgba(16,32,56,.08),0 4px 16px rgba(16,32,56,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1420; --surface:#161e2c; --surface2:#1e2836; --line:#2b3648;
+      --ink:#eef2f8; --ink2:#a3b0c2; --ink3:#71809a;
+      --navy:#7aa2e8; --navy2:#5b86d6; --orange:#f0954b;
+      --coach:#2bc490; --first:#c07ad8;
+      --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f9; --surface:#fff; --surface2:#eef1f6; --line:#d7dde7;
+    --ink:#16202e; --ink2:#5b6879; --ink3:#8a95a5;
+    --navy:#1f3f78; --navy2:#2b5296; --orange:#e07b2c;
+    --coach:#0f9d6e; --first:#7b2d94; --good:#12805c; --bad:#c0392b; --onGood:#fff;
+    --shadow:0 1px 2px rgba(16,32,56,.08),0 4px 16px rgba(16,32,56,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1420; --surface:#161e2c; --surface2:#1e2836; --line:#2b3648;
+    --ink:#eef2f8; --ink2:#a3b0c2; --ink3:#71809a;
+    --navy:#7aa2e8; --navy2:#5b86d6; --orange:#f0954b;
+    --coach:#2bc490; --first:#c07ad8; --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%; overflow-x:hidden;}
+  #app{max-width:560px;margin:0 auto;padding:0 14px 96px;}
+
+  h1,h2,h3{margin:0;line-height:1.2}
+  button{font:inherit;color:inherit;font-family:inherit}
+  input,select{font:inherit;font-family:inherit}
+
+  /* ---------- header ---------- */
+  .top{position:sticky;top:0;z-index:20;background:var(--bg);
+    padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .top-row{display:flex;align-items:center;gap:10px}
+  .brand{font-weight:800;letter-spacing:.06em;font-size:13px;color:var(--navy);text-transform:uppercase}
+  .spacer{flex:1}
+
+  /* ---------- cards / surfaces ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
+  .card.tight{padding:12px}
+  .muted{color:var(--ink2)}
+  .tiny{font-size:13px}
+  .xtiny{font-size:12px}
+  .center{text-align:center}
+
+  /* ---------- buttons ---------- */
+  .btn{display:block;width:100%;padding:15px 16px;border-radius:12px;border:1px solid var(--line);
+    background:var(--surface);font-weight:600;cursor:pointer;text-align:left;
+    margin-bottom:10px;transition:transform .06s ease, background .15s ease}
+  .btn:active{transform:scale(.985)}
+  .btn.primary{background:var(--navy);border-color:var(--navy);color:#fff;text-align:center}
+  .btn.big{padding:18px 16px;font-size:17px}
+  .btn.ghost{background:transparent}
+  .btn.danger{color:var(--bad);border-color:var(--bad)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn .sub{display:block;font-weight:400;font-size:13px;color:var(--ink2);margin-top:3px}
+  .btn.primary .sub{color:rgba(255,255,255,.82)}
+  .btn-row{display:flex;gap:10px}
+  .btn-row .btn{margin-bottom:0}
+  .chipbtn{display:inline-block;width:auto;padding:9px 14px;border-radius:999px;font-size:14px;margin:0}
+
+  .actions{display:grid;gap:10px}
+  .act{display:flex;align-items:center;gap:13px;padding:16px;border-radius:14px;
+    border:1px solid var(--line);background:var(--surface);cursor:pointer;text-align:left;width:100%}
+  .act:active{transform:scale(.985)}
+  .act .ico{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;
+    font-size:19px;background:var(--surface2)}
+  .act > span:last-child{display:block;min-width:0}
+  .act .ttl{display:block;font-weight:700}
+  .act .dsc{display:block;font-size:13px;color:var(--ink2);margin-top:2px}
+
+  /* ---------- forms ---------- */
+  label.fld{display:block;margin-bottom:14px}
+  label.fld > span{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+  input[type=text],input[type=number],select{width:100%;padding:13px 14px;border-radius:11px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px}
+
+  /* ---------- player strip ---------- */
+  .pcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:13px;
+    border:1px solid var(--line);background:var(--surface);margin-bottom:8px}
+  .pcard.active{border-color:var(--navy);box-shadow:0 0 0 2px color-mix(in srgb,var(--navy) 22%,transparent)}
+  .pawn{width:34px;height:34px;flex:none;border-radius:9px;display:grid;place-items:center;
+    font-weight:800;color:#fff;font-size:14px}
+  .p0{background:#c0392b}.p1{background:#1f6fb8}.p2{background:#12805c}.p3{background:#b8860b}
+  .pname{font-weight:700}
+  .pmeta{font-size:13px;color:var(--ink2)}
+  .pmiles{margin-left:auto;text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+  .pmiles small{display:block;font-weight:500;font-size:11px;color:var(--ink3);letter-spacing:.04em}
+
+  /* ---------- big stat ---------- */
+  .stat{text-align:center;padding:6px 0 2px}
+  .stat .n{font-size:44px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .stat .l{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
+
+  /* ---------- city chips ---------- */
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:12px;font-weight:600;padding:5px 9px;border-radius:7px;
+    border:1px solid var(--line);color:var(--ink3);background:var(--surface2)}
+  .chip.v1{border-color:var(--good);color:var(--good)}
+  .chip.on{background:var(--good);border-color:var(--good);color:var(--onGood)}
+  .chip i{font-style:normal;font-size:9px;vertical-align:super;margin-left:2px;opacity:.85}
+  .chip.home::after{content:'⌂';margin-left:4px;opacity:.75;font-weight:400}
+  .chip.here{box-shadow:0 0 0 2px var(--orange)}
+  .chip.here:not(.on){border-color:var(--orange);color:var(--orange)}
+
+  /* ---------- progress ---------- */
+  .bar{height:7px;border-radius:99px;background:var(--surface2);overflow:hidden;margin:10px 0 4px}
+  .bar > i{display:block;height:100%;background:var(--good);border-radius:99px;transition:width .3s}
+
+  /* ---------- list ---------- */
+  .list{max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .row{display:flex;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line);
+    cursor:pointer;width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
+  .row:last-child{border-bottom:0}
+  .row:active{background:var(--surface2)}
+  .row > span:not(.deckdot):not(.code):not(.r){display:block;min-width:0}
+  .row .n{display:block;font-weight:700}
+  .row .d{display:block;font-size:13px;color:var(--ink2);margin-top:1px}
+  .row .r{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;color:var(--navy)}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;
+    color:var(--ink3);width:34px;flex:none}
+
+  /* ---------- game card display ---------- */
+  .gcard{border-radius:14px;padding:18px;text-align:center;border:2px solid;margin-bottom:12px;background:var(--surface)}
+  .gcard.coach{border-color:var(--coach)}
+  .gcard.first{border-color:var(--first)}
+  .gcard .gt{font-size:23px;font-weight:800;margin-bottom:9px;font-style:italic}
+  .gcard.coach .gt{color:var(--coach)}
+  .gcard.first .gt{color:var(--first)}
+  .gcard .gx{font-size:15px;line-height:1.4}
+  .gcard .gf{margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;padding:8px;border-radius:7px;color:#fff}
+  .gcard.coach .gf{background:var(--coach)}
+  .gcard.first .gf{background:var(--first)}
+  .deckdot{width:9px;height:9px;border-radius:99px;flex:none}
+  .deckdot.coach{background:var(--coach)}.deckdot.first{background:var(--first)}
+
+  /* ---------- misc ---------- */
+  .banner{padding:12px 14px;border-radius:11px;font-size:14px;margin-bottom:12px;
+    border:1px solid var(--line);background:var(--surface2)}
+  .banner.warn{border-color:var(--orange);color:var(--orange)}
+  .banner.win{border-color:var(--good);background:var(--good);color:var(--onGood);font-weight:700;text-align:center;font-size:17px}
+  .delta{font-weight:800;font-variant-numeric:tabular-nums}
+  .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+  .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .kv:last-child{border-bottom:0}
+  .kv b{font-variant-numeric:tabular-nums}
+  .seg{display:flex;gap:6px;background:var(--surface2);padding:4px;border-radius:11px;margin-bottom:12px}
+  .seg button{flex:1;padding:10px;border:0;background:none;border-radius:8px;font-weight:600;cursor:pointer;color:var(--ink2)}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+  .hint{font-size:13px;color:var(--ink2);margin:-4px 0 12px}
+  .toggle{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);
+    border-radius:11px;margin-bottom:10px;cursor:pointer;background:var(--surface)}
+  .toggle input{width:20px;height:20px;flex:none;accent-color:var(--navy)}
+  .toggle > span:last-child{display:block;min-width:0}
+  .toggle .tl{display:block;font-size:14px;font-weight:600}
+  .toggle .td{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
+
+  /* ---------- bottom nav ---------- */
+  .nav{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;
+    background:var(--surface);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom)}
+  .nav button{flex:1;padding:11px 4px 10px;border:0;background:none;cursor:pointer;
+    font-size:11px;font-weight:600;color:var(--ink3);display:grid;gap:3px;justify-items:center}
+  .nav button.on{color:var(--navy)}
+  .nav .ni{font-size:19px;line-height:1}
+
+  .log{font-size:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .log:last-child{border-bottom:0}
+  .log .lw{font-weight:700}
+  .log .lt{color:var(--ink2);font-size:13px;margin-top:2px}
+</style>
+<!-- Head extras that only apply to the standalone page. The Claude Artifact
+     build skips this file, since that host supplies its own document wrapper. -->
+<meta name="description" content="A free scorekeeper for the board game Frequent Flyer: Race Across the States. Tracks every player's mileage balance and destination checklist, knows all 70 cards, and does the mileage-chart lookups for you.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#0e1420" media="(prefers-color-scheme:dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Frequent Flyer — Scorekeeper">
+<meta property="og:description" content="Pass one phone around the table. It tracks miles, checks off cities, and knows all 70 cards.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAFiUlEQVR42u3dPYwVVRiA4e8783f/dhdJpJQQClqoRBu0ozWhMsZYUhoLA4UVBZWxMrEg0Q5NlEIDiRXYIIaIJgQToqtxNViwyoL3Z++dmfNZTCRGWUFmZ/bc6/tkqy1mZ2ffO3funjlndO+REwI8iOMQgDhAHCAOEAeIA8QB4gBxgDhAHABxgDhAHCAOEAeIA8QB4gBxgDgA4gBxgDhAHCAOEAeIA8QB4gBxAMQB4gBxgDhAHCAOEAeIA8QB4gBxAMQB4gBxgDhAHAhL3GqJTkP7/c2bPej7qqqh7azJFjs7/3GYyWg8bfe3e7gsi2Pn7O9lyCwv8rwM6yQfuU4aL1ocqlqUfrnfOXP65UE3NZMQXpTei3Ny6u0LX974sd9J778oI6cbw81XXnj22NFDpbcogLNdtRs3vr31xlsfdzqJtfUKi9s6bVgSu+cPH4hdWFc5u3f1i8Krqvx5xFU1z4v9Tz35zKH9Qe1qt5MU3v9lTxfrbeXecLIy6JpZCO/n3ptzWhT+n/uiqtNZXnpflD6OXABnDh85NxrPdIEvSCPnIucCiUPFnNtyR1Q1cs5MojBOdZFz7V/O81EWxAHiAHGAOEAcIA4QB4gDxAHhfo4QeW9Nb9y2b2SxufEw7023vPPk/xpHo6MJ1cb/eTOHPO5tCc2NFzkXiUgvS4lDqpG50WT66qkP7o4248g185oxEf3mu1u9LKnzoqxutvjo02vvnbu8MuiWjZztTETvDSdZFluL549wzxx54S9eubm+MUqSqLkj0s2SOHZ1tm9mIrq6dvv8pet7di8VpZfGBmZ7naTN95Zw41CV5UE3L30SNxiH36a38ixNdi31Vgbd5uIwsUYvwubsmqP0vvTeebXQbj190Pmj2tvSexE+yoL/c4A4AOIAcYA4QBwgDhAHiAPEAeFmnx3YuchVXzXHVrw1PmTlnMax25ZZ180N3S1OHGa2fme0vjGsP2TfzZJuJ2109G48mf326+9idf+0Krqy1AlkVaE4yMF6FZFulp48fnQ8zSOnj/1n9WZO9crX31/64mavmzZx/qjuKHvu6QOnXz9W70eYiE5n+bsfXh5PZ9VyBMQhW9whER9/8ci2bOqds8mFz64PepmXBuJQFZHDB/cdPrhvWzZ49pOrw8k0gGVBwr7mqP/uW62+Mp7Mmj5Re2/em2jdmyPvDifh3LwS+gXptmykhWVPnNOaP6WKI4SFhPgoC+IAcYA4QBwgDhAHiAPEAeIAgp8rW38LqtLCaIVZ3RnZ1b/Pg5pqG3Qc9Relr7aQpY0/o0RVo+0Y21sedMN5QlQc8pDstRtrRVGq6mMvz1StrLK6djtJmlr2pHrF//TLnR9+Xk9r3JdUPaNoOJnl1fNfiONfDvdwPH3ptTPrG6P663MkSbTcz5pZc0dKb3Gk75+/evLNc3ueqLt4i6p0sjRyQaw6EfTiLf1etpkX9eMwa/yyI03ipX5n0M/q34PS8gotc7yaYPU1F4u33N9bPsqC/3OAOADiAHGAOEAcIA4QB4gDxAHiAHEAxAHiAHGAOEAcIA4QB4gDxAHiAIgDEsikpuqBzdVsRwl7vvn9J0w/dNZqaxP5FzmO6tn0jz5xfgfnm5tZliaRc4+yt61N5F/YOFQ1L/zFKzcH3bSaTh7sfHMzS5J4de3251+tVpP0d3wi/07RvUdOtHXQZXM6e/SjV80335GTh6rM8jLPS/kvE/nTJFqwc0fc8qx5mYf55maSJnGWxkFN5F/wC9I5moFutpCXmHyUBXGAOEAcIA4QB4gDxAHiAIgDxAHiAHGAOEAcIA4QB4gDxAEQB4gDxAHiAHGAOEAcIA4QB4gDxAEQB4gDxAHiAHGAOEAcIA4QB4gDIA4QB4gDxAHiAHGAODDX/gDu8Uju/N4tTQAAAABJRU5ErkJggg==">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAFiUlEQVR42u3dPYwVVRiA4e8783f/dhdJpJQQClqoRBu0ozWhMsZYUhoLA4UVBZWxMrEg0Q5NlEIDiRXYIIaIJgQToqtxNViwyoL3Z++dmfNZTCRGWUFmZ/bc6/tkqy1mZ2ffO3funjlndO+REwI8iOMQgDhAHCAOEAeIA8QB4gBxgDhAHABxgDhAHCAOEAeIA8QB4gBxgDgA4gBxgDhAHCAOEAeIA8QB4gBxAMQB4gBxgDhAHCAOEAeIA8QB4gBxAMQB4gBxgDhAHAhL3GqJTkP7/c2bPej7qqqh7azJFjs7/3GYyWg8bfe3e7gsi2Pn7O9lyCwv8rwM6yQfuU4aL1ocqlqUfrnfOXP65UE3NZMQXpTei3Ny6u0LX974sd9J778oI6cbw81XXnj22NFDpbcogLNdtRs3vr31xlsfdzqJtfUKi9s6bVgSu+cPH4hdWFc5u3f1i8Krqvx5xFU1z4v9Tz35zKH9Qe1qt5MU3v9lTxfrbeXecLIy6JpZCO/n3ptzWhT+n/uiqtNZXnpflD6OXABnDh85NxrPdIEvSCPnIucCiUPFnNtyR1Q1cs5MojBOdZFz7V/O81EWxAHiAHGAOEAcIA4QB4gDxAHhfo4QeW9Nb9y2b2SxufEw7023vPPk/xpHo6MJ1cb/eTOHPO5tCc2NFzkXiUgvS4lDqpG50WT66qkP7o4248g185oxEf3mu1u9LKnzoqxutvjo02vvnbu8MuiWjZztTETvDSdZFluL549wzxx54S9eubm+MUqSqLkj0s2SOHZ1tm9mIrq6dvv8pet7di8VpZfGBmZ7naTN95Zw41CV5UE3L30SNxiH36a38ixNdi31Vgbd5uIwsUYvwubsmqP0vvTeebXQbj190Pmj2tvSexE+yoL/c4A4AOIAcYA4QBwgDhAHiAPEAeFmnx3YuchVXzXHVrw1PmTlnMax25ZZ180N3S1OHGa2fme0vjGsP2TfzZJuJ2109G48mf326+9idf+0Krqy1AlkVaE4yMF6FZFulp48fnQ8zSOnj/1n9WZO9crX31/64mavmzZx/qjuKHvu6QOnXz9W70eYiE5n+bsfXh5PZ9VyBMQhW9whER9/8ci2bOqds8mFz64PepmXBuJQFZHDB/cdPrhvWzZ49pOrw8k0gGVBwr7mqP/uW62+Mp7Mmj5Re2/em2jdmyPvDifh3LwS+gXptmykhWVPnNOaP6WKI4SFhPgoC+IAcYA4QBwgDhAHiAPEAeIAgp8rW38LqtLCaIVZ3RnZ1b/Pg5pqG3Qc9Relr7aQpY0/o0RVo+0Y21sedMN5QlQc8pDstRtrRVGq6mMvz1StrLK6djtJmlr2pHrF//TLnR9+Xk9r3JdUPaNoOJnl1fNfiONfDvdwPH3ptTPrG6P663MkSbTcz5pZc0dKb3Gk75+/evLNc3ueqLt4i6p0sjRyQaw6EfTiLf1etpkX9eMwa/yyI03ipX5n0M/q34PS8gotc7yaYPU1F4u33N9bPsqC/3OAOADiAHGAOEAcIA4QB4gDxAHiAHEAxAHiAHGAOEAcIA4QB4gDxAHiAIgDEsikpuqBzdVsRwl7vvn9J0w/dNZqaxP5FzmO6tn0jz5xfgfnm5tZliaRc4+yt61N5F/YOFQ1L/zFKzcH3bSaTh7sfHMzS5J4de3251+tVpP0d3wi/07RvUdOtHXQZXM6e/SjV80335GTh6rM8jLPS/kvE/nTJFqwc0fc8qx5mYf55maSJnGWxkFN5F/wC9I5moFutpCXmHyUBXGAOEAcIA4QB4gDxAHiAIgDxAHiAHGAOEAcIA4QB4gDxAEQB4gDxAHiAHGAOEAcIA4QB4gDxAEQB4gDxAHiAHGAOEAcIA4QB4gDIA4QB4gDxAHiAHGAODDX/gDu8Uju/N4tTQAAAABJRU5ErkJggg==">
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ==========================================================================
+   Frequent Flyer — Scorekeeper
+   Data transcribed from the printed game components (© Frequent Games LLC).
+   Mileage matrix machine-verified symmetric across all 190 city pairs.
+   ========================================================================== */
+
+const CITIES = [
+  {n: 1, id:'ATL', name:'Atlanta'},        {n: 2, id:'BOS', name:'Boston'},
+  {n: 3, id:'CLT', name:'Charlotte'},      {n: 4, id:'ORD', name:'Chicago'},
+  {n: 5, id:'DFW', name:'Dallas'},         {n: 6, id:'DEN', name:'Denver'},
+  {n: 7, id:'DTW', name:'Detroit'},        {n: 8, id:'IAH', name:'Houston'},
+  {n: 9, id:'LAS', name:'Las Vegas'},      {n:10, id:'LAX', name:'Los Angeles'},
+  {n:11, id:'MEM', name:'Memphis'},        {n:12, id:'MIA', name:'Miami'},
+  {n:13, id:'MSP', name:'Minneapolis'},    {n:14, id:'JFK', name:'New York'},
+  {n:15, id:'PHL', name:'Philadelphia'},   {n:16, id:'PHX', name:'Phoenix'},
+  {n:17, id:'SFO', name:'San Francisco'},  {n:18, id:'SEA', name:'Seattle'},
+  {n:19, id:'STL', name:'St. Louis'},      {n:20, id:'IAD', name:'Washington DC'},
+];
+const CIDX = {}; CITIES.forEach((c,i)=>CIDX[c.id]=i);
+const cityName = id => (CITIES[CIDX[id]]||{}).name || id;
+
+/* Row/col order matches CITIES above (1..20). Symmetric; diagonal 0. */
+const MILEAGE = [
+ [   0, 900, 500, 600, 700,1200, 600, 700,1700,1900, 500, 600, 900, 800, 700,1600,2100,2200, 500, 500],
+ [ 900,   0, 700, 900,1600,1800, 600,1600,2400,2600,1100,1300,1100, 500, 500,2300,2700,2500,1000, 500],
+ [ 500, 700,   0, 600, 900,1300, 500, 900,1900,2100, 500, 700, 900, 500, 500,1800,2300,2300, 600, 500],
+ [ 600, 900, 600,   0, 800, 900, 500, 900,1500,1700, 500,1200, 500, 700, 700,1400,1800,1700, 500, 600],
+ [ 700,1600, 900, 800,   0, 600,1000, 500,1100,1200, 500,1100, 900,1400,1300, 900,1500,1700, 600,1200],
+ [1200,1800,1300, 900, 600,   0,1100, 900, 600, 900, 900,1700, 700,1600,1600, 600,1000,1000, 800,1500],
+ [ 600, 600, 500, 500,1000,1100,   0,1100,1700,2000, 600,1200, 500, 500, 500,1700,2100,1900, 500, 500],
+ [ 700,1600, 900, 900, 500, 900,1100,   0,1200,1400, 500,1000,1000,1400,1300,1000,1600,1900, 700,1200],
+ [1700,2400,1900,1500,1100, 600,1700,1200,   0, 500,1400,2200,1300,2200,2200, 500, 500, 900,1400,2100],
+ [1900,2600,2100,1700,1200, 900,2000,1400, 500,   0,1600,2300,1500,2500,2400, 500, 500,1000,1600,2300],
+ [ 500,1100, 500, 500, 500, 900, 600, 500,1400,1600,   0, 900, 700,1000, 900,1300,1800,1900, 500, 700],
+ [ 600,1300, 700,1200,1100,1700,1200,1000,2200,2300, 900,   0,1500,1100,1000,2000,2600,2700,1100, 900],
+ [ 900,1100, 900, 500, 900, 700, 500,1000,1300,1500, 700,1500,   0,1000,1000,1300,1600,1400, 500, 900],
+ [ 800, 500, 500, 700,1400,1600, 500,1400,2200,2500,1000,1100,1000,   0, 500,2200,2600,2400, 900, 500],
+ [ 700, 500, 500, 700,1300,1600, 500,1300,2200,2400, 900,1000,1000, 500,   0,2100,2500,2400, 800, 500],
+ [1600,2300,1800,1400, 900, 600,1700,1000, 500, 500,1300,2000,1300,2200,2100,   0, 700,1100,1300,2000],
+ [2100,2700,2300,1800,1500,1000,2100,1600, 500, 500,1800,2600,1600,2600,2500, 700,   0, 700,1700,2400],
+ [2200,2500,2300,1700,1700,1000,1900,1900, 900,1000,1900,2700,1400,2400,2400,1100, 700,   0,1700,2300],
+ [ 500,1000, 600, 500, 600, 800, 500, 700,1400,1600, 500,1100, 500, 900, 800,1300,1700,1700,   0, 700],
+ [ 500, 500, 500, 600,1200,1500, 500,1200,2100,2300, 700, 900, 900, 500, 500,2000,2400,2300, 700,   0],
+];
+/* Rules: "There is a minimum amount of 500 miles earned, even for a short flight." */
+const MIN_SEGMENT = 500;
+function milesBetween(a,b){
+  if(!a||!b||a===b) return 0;
+  return Math.max(MIN_SEGMENT, MILEAGE[CIDX[a]][CIDX[b]]);
+}
+
+const START_MILES = 5000;
+const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
+
+/* --------------------------------------------------------------------------
+   CARDS
+   fx fields (all optional):
+     miles          delta applied to the current player
+     milesIf        {cities:[], mode:'all'|'any'|'none', amount}
+     collectEach    each opponent pays the current player this amount
+     fly            city id | 'choose' | 'home' | [ids]   (relocate + check off)
+     flyEarns       whether that flight earns mileage
+     flyIfNot       city id — only fly if NOT yet visited
+     flyIfNotElse   text shown when the condition fails
+     bonusIfVisited {city, amount} — extra bonus when already visited
+     oppFly         city id — a chosen opponent is forced to fly there (no miles)
+     addCity        'choose' — add a city to the checklist without flying
+     stealCity      true — take a city from an opponent
+     stealCard      true — take a held card from an opponent
+     skipSelf / skipOpp   number of turns to skip
+     firstClass     true|false — set travel class for the current flight
+     multiplier     n — sets the mileage multiplier for the next completed flight
+     bounty         {city, amount} — pays out to the next player reaching that city
+     hold           true — card is kept in hand and played later
+     choice         [{label, fx}] — player picks one branch
+     note           board-only instruction; no scoring change
+   -------------------------------------------------------------------------- */
+
+const WISH = {hold:true, note:'Keep this card. Play it to choose your destination instead of rolling.'};
+const UPG  = {hold:true, note:'Keep this card. Play it for a free first class upgrade.'};
+
+const CARDS = [
+/* ------------------------------ COACH (45) ------------------------------ */
+{id:'C1', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C2', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C3', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C4', deck:'coach', title:'All Systems Go', text:'Move forward 3 spaces on this turn.', fx:{note:'Move your pawn forward 3 spaces.'}},
+{id:'C5', deck:'coach', title:'Baby On Board', text:'Move backward 3 spaces on this turn.', fx:{note:'Move your pawn backward 3 spaces.'}},
+{id:'C6', deck:'coach', title:'Brotherly Love', text:'Force the opponent of your choice to advance directly to Philadelphia on this turn. That player does not earn any miles on his or her flight to Philadelphia.', fx:{oppFly:'PHL'}},
+{id:'C7', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'C8', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'C9', deck:'coach', title:'Bulkhead Seating', text:'Move forward 4 spaces on this turn.', fx:{note:'Move your pawn forward 4 spaces.'}},
+{id:'C10',deck:'coach', title:'Strong Tailwinds', text:'Move forward 5 spaces on this turn.', fx:{note:'Move your pawn forward 5 spaces.'}},
+{id:'C11',deck:'coach', title:'Deja Vu', text:'Return immediately to the city you departed from on this flight and restart the same flight again on this turn.', fx:{note:'Return your pawn to the city you departed from and restart the flight.'}},
+{id:'C12',deck:'coach', title:'Clear Skies', text:'Move forward 3 spaces on this turn.', fx:{note:'Move your pawn forward 3 spaces.'}},
+{id:'C13',deck:'coach', title:'Windy City', text:'Advance directly to Chicago on this flight. Earn miles from your departure city to Chicago.', fx:{fly:'ORD', flyEarns:true}},
+{id:'C14',deck:'coach', title:'Donation', text:'You lose 500 miles after your generous charitable donation.', fx:{miles:-500}},
+{id:'C15',deck:'coach', title:'Window Seat', text:'Move forward 2 spaces on this turn.', fx:{note:'Move your pawn forward 2 spaces.'}},
+{id:'C16',deck:'coach', title:'Door #1 or Door #2', text:'You may either take the top card from the first class deck or collect 5,000 miles on this turn.', fx:{choice:[
+  {label:'Collect 5,000 miles', fx:{miles:5000}},
+  {label:'Draw a first class card', fx:{note:'Draw the top card from the first class deck, then log it as a First Class card.'}}
+]}},
+{id:'C17',deck:'coach', title:'Turbulence', text:'Lose your next turn and move backward 5 spaces on this turn.', fx:{skipSelf:1, note:'Move your pawn backward 5 spaces.'}},
+{id:'C18',deck:'coach', title:'Double Miles', text:'Earn double miles on the future flight of your choice if it is completed to its expected destination.', footer:'Multiply your miles earned times two', fx:{hold:true, multiplier:2}},
+{id:'C19',deck:'coach', title:'Golden Gate', text:'If you have already visited both San Francisco and Los Angeles, earn a bonus of 5,000 miles.', fx:{milesIf:{cities:['SFO','LAX'], mode:'all', amount:5000}}},
+{id:'C20',deck:'coach', title:'Triple Miles', text:'Earn triple miles on the future flight of your choice if it is completed to its expected destination.', footer:'Multiply your miles earned times three', fx:{hold:true, multiplier:3}},
+{id:'C21',deck:'coach', title:'Flight Cancelled', text:'Lose your next turn.', fx:{skipSelf:1}},
+{id:'C22',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C23',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C24',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000}}},
+{id:'C26',deck:'coach', title:'Emergency Landing', text:'Flight immediately cleared to land at nearest city from your current location on this turn. Collect miles from your departure city to the emergency city.', fx:{fly:'choose', flyEarns:true, note:'Land at the nearest city to your pawn.'}},
+{id:'C27',deck:'coach', title:'Grand Canyon', text:'If you have visited Phoenix, move forward 7 spaces, otherwise move backward 7 spaces.', fx:{note:'If Phoenix is checked off, move forward 7 spaces — otherwise move backward 7 spaces.'}},
+{id:'C28',deck:'coach', title:'Happy Birthday', text:'Receive 500 miles from every player on this turn.', fx:{collectEach:500}},
+{id:'C29',deck:'coach', title:'Jet Lag', text:'Lose your next 2 turns and move backward 5 spaces.', fx:{skipSelf:2, note:'Move your pawn backward 5 spaces.'}},
+{id:'C30',deck:'coach', title:'Stolen Baggage', text:'Lose 2,000 miles on this turn.', fx:{miles:-2000}},
+{id:'C31',deck:'coach', title:'Homesick', text:'Return immediately to your home city on this turn. Do not earn any miles on the flight home.', fx:{fly:'home', flyEarns:false}},
+{id:'C32',deck:'coach', title:'Heavy Air Traffic', text:'Move backward 4 spaces on this turn.', fx:{note:'Move your pawn backward 4 spaces.'}},
+{id:'C33',deck:'coach', title:'In-Flight Meal', text:'Meal does not sit well with your stomach, move backward 2 spaces on this turn.', fx:{note:'Move your pawn backward 2 spaces.'}},
+{id:'C34',deck:'coach', title:'Lone Star State', text:'Advance immediately to either Houston or Dallas (your choice) on this turn. Earn miles from your departure to your new destination.', fx:{fly:['IAH','DFW'], flyEarns:true}},
+{id:'C35',deck:'coach', title:'New York Marathon', text:'Next player to visit New York wins 20,000 miles.', footer:'Place this card on the game board until a player visits New York', fx:{bounty:{city:'JFK', amount:20000}}},
+{id:'C36',deck:'coach', title:'Mall of America', text:'Advance immediately to Minneapolis on this turn. Earn miles from your departure city to Minneapolis.', fx:{fly:'MSP', flyEarns:true}},
+{id:'C37',deck:'coach', title:'Ski Season', text:'Advance to Denver on this turn. Earn miles from your departure city to Denver.', fx:{fly:'DEN', flyEarns:true}},
+{id:'C38',deck:'coach', title:'Tea Party', text:'If you have not visited Boston yet, immediately advance directly to Boston on this turn and earn miles from your departure city to Boston; otherwise roll again.', fx:{flyIfNot:'BOS', flyEarns:true, flyIfNotElse:'You have already visited Boston — roll again.'}},
+{id:'C39',deck:'coach', title:'Lucky Las Vegas', text:'Advance directly to Las Vegas on this turn. Earn miles from your departure city to Las Vegas.', fx:{fly:'LAS', flyEarns:true}},
+{id:'C40',deck:'coach', title:'Late Arrival', text:'Move backward 5 spaces on this turn.', fx:{note:'Move your pawn backward 5 spaces.'}},
+{id:'C41',deck:'coach', title:'Red Eye Flight', text:'Lose your next turn, but move forward 8 spaces.', fx:{skipSelf:1, note:'Move your pawn forward 8 spaces.'}},
+{id:'C42',deck:'coach', title:'The Arch', text:'Advance immediately to St. Louis on this turn. Earn miles from your departure city to St. Louis.', fx:{fly:'STL', flyEarns:true}},
+{id:'C43',deck:'coach', title:'Standby', text:'Fly first class for the remainder of this flight.', footer:'Save this card until the remainder of this flight', fx:{firstClass:true}},
+{id:'C44',deck:'coach', title:'Coronavirus Lockdown', text:'Move backward 4 spaces and lose your next turn.', fx:{skipSelf:1, note:'Move your pawn backward 4 spaces.'}},
+{id:'C45',deck:'coach', title:'Odd or Even', text:'Roll the 20-sided die, if the number rolled is odd, move forward the amount of the roll; if the number rolled is even, move backward the amount of the roll on this turn.', fx:{note:'Roll the die: odd = move forward that many spaces, even = move backward that many.'}},
+
+/* --------------------------- FIRST CLASS (25) --------------------------- */
+{id:'F1', deck:'first', title:'Ahead of Schedule', text:'Move forward 6 spaces on this turn.', fx:{note:'Move your pawn forward 6 spaces.'}},
+{id:'F2', deck:'first', title:'Disruptive', text:'Return immediately to your departure city and restart your current flight on this turn. You still remain in first class.', fx:{note:'Return your pawn to your departure city and restart the flight. You stay in first class.'}},
+{id:'F3', deck:'first', title:'Gift', text:'You may add the city of your choice to your destination checklist on this turn.', fx:{addCity:'choose'}},
+{id:'F4', deck:'first', title:'Downgrade', text:'Move back to coach class for the remainder of this flight.', fx:{firstClass:false}},
+{id:'F5', deck:'first', title:'Downgrade', text:'Move back to coach class for the remainder of this flight.', fx:{firstClass:false}},
+{id:'F6', deck:'first', title:'Super First Class', text:'Move three times the roll of the 20-sided die instead of the normal two times for the remainder of this flight only.', footer:'A roll of 20 would move 60 spaces', fx:{note:'For the rest of this flight, move 3× your die roll instead of 2×.'}},
+{id:'F7', deck:'first', title:'Grand Theft Air', text:'Take any one coach or first class card for yourself from any opponent on this turn.', fx:{stealCard:true}},
+{id:'F8', deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F9', deck:'first', title:'Lottery Winner', text:'Collect 10,000 miles on this turn.', fx:{miles:10000}},
+{id:'F10',deck:'first', title:'Early Arrival', text:'Advance forward directly to your expected destination on this turn.', fx:{fly:'choose', flyEarns:true, note:'Advance straight to the destination you were already flying to.'}},
+{id:'F11',deck:'first', title:"Pilot's Orders", text:'You may either lose your next turn and forfeit 3,000 miles or continue the rest of this flight in coach.', fx:{choice:[
+  {label:'Continue this flight in coach', fx:{firstClass:false}},
+  {label:'Lose next turn and forfeit 3,000 miles', fx:{skipSelf:1, miles:-3000}}
+]}},
+{id:'F12',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F13',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F14',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F15',deck:'first', title:'No Show', text:'Force the player of your choice to miss their next turn.', fx:{skipOpp:1}},
+{id:'F16',deck:'first', title:'Private Jet', text:'Redeem this card for an automatic future flight to the city of your choice. Do not earn miles on that flight, since you will not be flying commercial air.', footer:'Card may be saved', fx:{hold:true, fly:'choose', flyEarns:false}},
+{id:'F17',deck:'first', title:'Quadruple Miles', text:'Earn quadruple miles on this flight if it is completed to its expected destination city.', footer:'Multiply your mileage by 4', fx:{multiplier:4}},
+{id:'F18',deck:'first', title:'Robbery', text:"Choose any one city from the opponent of your choice (except that opponent's home city) and remove it from their list and add it to your list on this turn.", fx:{stealCity:true}},
+{id:'F19',deck:'first', title:'City of Dreams', text:'Advance directly to the city of your choice on this turn. Earn miles from the city you departed from to the new destination.', fx:{fly:'choose', flyEarns:true}},
+{id:'F20',deck:'first', title:'Fortune Teller', text:'Select the next three cards from the coach card deck on this turn and select any one card for yourself; discard the two coach cards that you do not use.', fx:{note:'Draw the top 3 coach cards, keep 1, discard 2. Then log the card you kept.'}},
+{id:'F21',deck:'first', title:'White House', text:'Earn a bonus of 5,000 miles if you have already been to Washington DC.', fx:{milesIf:{cities:['IAD'], mode:'all', amount:5000}}},
+{id:'F22',deck:'first', title:'Queen City', text:'Advance directly to Charlotte on this turn and earn mileage from your departure city to Charlotte. If you have already visited Charlotte, earn a bonus of 5,000 miles.', fx:{fly:'CLT', flyEarns:true, bonusIfVisited:{city:'CLT', amount:5000}}},
+{id:'F23',deck:'first', title:'Georgia on My Mind', text:'Advance directly to Atlanta on this turn. Earn miles from your departure city to Atlanta.', fx:{fly:'ATL', flyEarns:true}},
+{id:'F24',deck:'first', title:'Motor City', text:'If you have not visited Detroit advance there directly on this turn and earn miles from your departure city to Detroit. If you have already visited Detroit, roll again.', fx:{flyIfNot:'DTW', flyEarns:true, flyIfNotElse:'You have already visited Detroit — roll again.'}},
+{id:'F25',deck:'first', title:'Discount', text:'Earn a first class upgrade for 5,000 miles (half of the usual redemption cost) on the future flight of your choice.', footer:'Card may be saved', fx:{hold:true, miles:-5000, firstClass:true}},
+];
+
+const CARDS_BY_ID = {}; CARDS.forEach(c=>CARDS_BY_ID[c.id]=c);
+</script>
+<script>
+/* ==========================================================================
+   State + engine
+   ========================================================================== */
+
+const KEY = 'frequentFlyer.game.v1';
+let G = null;          // game state
+let UI = {screen:'start', sub:null, tmp:{}};
+
+const fmt = n => n.toLocaleString('en-US');
+const uid = () => Math.random().toString(36).slice(2,9);
+
+function newPlayer(name, home){
+  return {
+    id: uid(), name, home, at: home,
+    miles: START_MILES,
+    visited: [home],
+    hand: [],            // card ids held
+    skip: 0,             // turns to miss
+    firstClass: false,   // for the flight in progress
+    mult: 1,             // multiplier armed for the next completed flight
+  };
+}
+
+function newGame(players, target){
+  return {
+    v: 1,
+    players, target,
+    turn: 0,             // index into players
+    started: Date.now(),
+    status: 'playing',
+    winner: null,
+    bounties: [],        // {city, amount, from}
+    log: [],             // {id, t, who, text, detail, undo}
+  };
+}
+
+/* ---------- persistence ---------- */
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){} }
+function load(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function wipe(){ try{ localStorage.removeItem(KEY); }catch(e){} }
+
+/* ---------- helpers ---------- */
+const cur = () => G.players[G.turn];
+const byId = id => G.players.find(p=>p.id===id);
+const opponents = p => G.players.filter(x=>x.id!==p.id);
+/* The 40-city game is the 20-city board played to two visits per city, in any
+   order — you may hit the same city twice before touching the others. So
+   `visited` is a list that may hold a city twice, not a set. */
+const maxVisits    = () => G.target > CITIES.length ? 2 : 1;
+const visitCount   = (p,c) => p.visited.reduce((n,x)=>n+(x===c?1:0), 0);
+const visitedCount = p => p.visited.length;
+const canVisit     = (p,c) => visitCount(p,c) < maxVisits();
+const stopWord     = () => maxVisits() > 1 ? 'stops' : 'cities';
+
+/* "Have they been here at all?" — this is what card conditions mean by
+   visited, so it stays a yes/no even when two visits are allowed. */
+const hasVisited = (p,c) => visitCount(p,c) > 0;
+
+/* Snapshot just the mutable player fields + bounties, for undo. */
+function snapshot(){
+  return JSON.stringify({p:G.players, b:G.bounties, t:G.turn, s:G.status, w:G.winner});
+}
+function restore(snap){
+  const o = JSON.parse(snap);
+  G.players = o.p; G.bounties = o.b; G.turn = o.t; G.status = o.s; G.winner = o.w;
+}
+
+/* Every mutation goes through this so undo and the log stay in sync. */
+function commit(text, detail, mutate){
+  const before = snapshot();
+  mutate();
+  G.log.unshift({id:uid(), t:Date.now(), who:cur().name, text, detail:detail||'', undo:before});
+  checkWin();
+  save();
+}
+
+function undoLast(){
+  const e = G.log.shift();
+  if(!e) return;
+  restore(e.undo);
+  save();
+}
+
+/* ---------- win condition ----------
+   Rules: visit the target number of cities (home counts as the first),
+   then return to your home city. */
+function checkWin(){
+  if(G.status !== 'playing') return;
+  for(const p of G.players){
+    if(visitedCount(p) >= G.target && p.at === p.home && G.log.length > 0){
+      G.status = 'finished'; G.winner = p.id; return;
+    }
+  }
+}
+
+/* ---------- core mutations ---------- */
+
+function addMiles(p, amount){ p.miles += amount; }
+
+/* Land a player in a city: check it off, move them, optionally pay mileage.
+   Returns {earned, bonus} for logging. */
+function land(p, to, earn, useMult){
+  const from = p.at;
+  let earned = 0;
+  if(earn && from && from !== to){
+    earned = milesBetween(from, to);
+    if(useMult && p.mult > 1) earned *= p.mult;
+  }
+  p.miles += earned;
+  p.at = to;
+  if(canVisit(p,to)) p.visited.push(to);
+  if(useMult) p.mult = 1;
+  p.firstClass = false;              // the flight is over
+
+  // Any bounty sitting on this city pays out now.
+  let bonus = 0;
+  G.bounties = G.bounties.filter(b=>{
+    if(b.city === to){ p.miles += b.amount; bonus += b.amount; return false; }
+    return true;
+  });
+  return {earned, bonus};
+}
+
+function advanceTurn(){
+  if(G.status !== 'playing') return;
+  let guard = 0;
+  do {
+    G.turn = (G.turn + 1) % G.players.length;
+    guard++;
+    if(cur().skip > 0){ cur().skip--; } else break;
+  } while(guard < 40);
+}
+
+/* ---------- card effects ----------
+   `ans` carries any answers the card needed: {city, oppId, oppCity, cardId, branch} */
+
+function cardNeeds(fx){
+  const need = [];
+  if(fx.choice) need.push('branch');
+  if(fx.fly === 'choose') need.push('city');
+  if(Array.isArray(fx.fly)) need.push('cityFrom');
+  if(fx.addCity === 'choose') need.push('city');
+  if(fx.oppFly) need.push('opp');
+  if(fx.skipOpp) need.push('opp');
+  if(fx.stealCity) need.push('stealCity');
+  if(fx.stealCard) need.push('stealCard');
+  return need;
+}
+
+/* Resolve a branch choice down to the concrete fx before applying. */
+function resolveFx(card, ans){
+  let fx = card.fx;
+  if(fx.choice && ans.branch != null) fx = fx.choice[ans.branch].fx;
+  return fx;
+}
+
+function applyFx(p, fx, ans, notes){
+  // straight mileage
+  if(fx.miles) { addMiles(p, fx.miles); notes.push((fx.miles>0?'+':'')+fmt(fx.miles)+' miles'); }
+
+  // conditional bonus on cities already visited
+  if(fx.milesIf){
+    const {cities, mode, amount} = fx.milesIf;
+    const ok = mode === 'all'  ? cities.every(c=>hasVisited(p,c))
+             : mode === 'none' ? cities.every(c=>!hasVisited(p,c))
+             :                   cities.some(c=>hasVisited(p,c));
+    if(ok){ addMiles(p, amount); notes.push('+'+fmt(amount)+' miles (condition met)'); }
+    else  { notes.push('No bonus — condition not met'); }
+  }
+
+  // collect from every opponent
+  if(fx.collectEach){
+    let got = 0;
+    opponents(p).forEach(o=>{ o.miles -= fx.collectEach; got += fx.collectEach; });
+    addMiles(p, got);
+    notes.push('+'+fmt(got)+' miles collected from '+opponents(p).length+' player(s)');
+  }
+
+  // arm a mileage multiplier
+  if(fx.multiplier){ p.mult = fx.multiplier; notes.push(fx.multiplier+'× mileage armed for your next flight'); }
+
+  // travel class
+  if(fx.firstClass === true){ p.firstClass = true; notes.push('Now flying first class'); }
+  if(fx.firstClass === false){ p.firstClass = false; notes.push('Back in coach'); }
+
+  // turn skipping
+  if(fx.skipSelf){ p.skip += fx.skipSelf; notes.push('Missing next '+fx.skipSelf+' turn(s)'); }
+  if(fx.skipOpp && ans.oppId){
+    const o = byId(ans.oppId); o.skip += fx.skipOpp;
+    notes.push(o.name+' misses their next turn');
+  }
+
+  // add a city without flying there
+  if(fx.addCity === 'choose' && ans.city){
+    if(canVisit(p, ans.city)) p.visited.push(ans.city);
+    notes.push(cityName(ans.city)+' added to your checklist');
+  }
+
+  // steal a city from an opponent
+  if(fx.stealCity && ans.oppId && ans.oppCity){
+    const o = byId(ans.oppId);
+    const k = o.visited.indexOf(ans.oppCity);   // one visit, not all of them
+    if(k >= 0) o.visited.splice(k, 1);
+    if(canVisit(p, ans.oppCity)) p.visited.push(ans.oppCity);
+    notes.push('Took '+cityName(ans.oppCity)+' from '+o.name);
+  }
+
+  // steal a held card
+  if(fx.stealCard && ans.oppId && ans.cardId){
+    const o = byId(ans.oppId);
+    o.hand = o.hand.filter(c=>c!==ans.cardId);
+    p.hand.push(ans.cardId);
+    notes.push('Took "'+CARDS_BY_ID[ans.cardId].title+'" from '+o.name);
+  }
+
+  // force an opponent to fly somewhere (no miles for them)
+  if(fx.oppFly && ans.oppId){
+    const o = byId(ans.oppId);
+    land(o, fx.oppFly, false, false);
+    notes.push(o.name+' forced to '+cityName(fx.oppFly)+' (no miles)');
+  }
+
+  // place a bounty on a city
+  if(fx.bounty){
+    G.bounties.push({city:fx.bounty.city, amount:fx.bounty.amount, from:p.name});
+    notes.push(fmt(fx.bounty.amount)+' miles now waiting in '+cityName(fx.bounty.city));
+  }
+
+  // relocate the player
+  let dest = null;
+  if(fx.flyIfNot){ if(!hasVisited(p, fx.flyIfNot)) dest = fx.flyIfNot; else notes.push(fx.flyIfNotElse||'Condition not met.'); }
+  else if(fx.fly === 'home') dest = p.home;
+  else if(fx.fly === 'choose' || Array.isArray(fx.fly)) dest = ans.city;
+  else if(typeof fx.fly === 'string') dest = fx.fly;
+
+  if(dest){
+    const already = hasVisited(p, dest);
+    const r = land(p, dest, !!fx.flyEarns, true);
+    notes.push('Flew to '+cityName(dest)+(r.earned?' (+'+fmt(r.earned)+' miles)':' (no miles)'));
+    if(r.bonus) notes.push('+'+fmt(r.bonus)+' bounty collected');
+    if(fx.bonusIfVisited && already && fx.bonusIfVisited.city === dest){
+      addMiles(p, fx.bonusIfVisited.amount);
+      notes.push('+'+fmt(fx.bonusIfVisited.amount)+' bonus (already visited)');
+    }
+  }
+}
+
+function playCard(card, ans){
+  const p = cur();
+  const fx = resolveFx(card, ans);
+  const notes = [];
+  const holding = fx.hold && !ans.fromHand;
+
+  commit(card.title, '', ()=>{
+    if(holding){
+      p.hand.push(card.id);
+      notes.push('Saved to your hand');
+    } else {
+      applyFx(p, fx, ans, notes);
+      if(ans.fromHand) p.hand = p.hand.filter(c=>c!==card.id);
+    }
+  });
+  G.log[0].detail = notes.join(' · ') || (fx.note || 'No scoring change');
+  save();
+  return notes;
+}
+
+/* ---------- flights & redemptions ---------- */
+
+function completeFlight(from, to, earns){
+  const p = cur();
+  let r;
+  commit('Flight', '', ()=>{
+    p.at = from;
+    r = land(p, to, earns, true);
+  });
+  const bits = [cityName(from)+' → '+cityName(to)];
+  if(earns) bits.push('+'+fmt(r.earned)+' miles'); else bits.push('no miles earned');
+  if(r.bonus) bits.push('+'+fmt(r.bonus)+' bounty');
+  G.log[0].detail = bits.join(' · ');
+  save();
+}
+
+function redeem(kind, city){
+  const p = cur();
+  if(kind === 'choose'){
+    commit('Redeemed 5,000 miles', 'Choose your destination instead of rolling', ()=>{ p.miles -= REDEEM.CHOOSE; });
+  } else if(kind === 'first'){
+    commit('Redeemed 10,000 miles', 'First class upgrade for this flight', ()=>{ p.miles -= REDEEM.FIRSTCLASS; p.firstClass = true; });
+  } else if(kind === 'auto'){
+    let r;
+    commit('Redeemed 20,000 miles', '', ()=>{ p.miles -= REDEEM.AUTO; r = land(p, city, false, false); });
+    let d = 'Automatic flight to '+cityName(city)+' · no miles earned';
+    if(r.bonus) d += ' · +'+fmt(r.bonus)+' bounty';
+    G.log[0].detail = d;
+    save();
+  }
+}
+
+function adjustMiles(delta, why){
+  const p = cur();
+  commit('Manual adjustment', (delta>0?'+':'')+fmt(delta)+' miles'+(why?' — '+why:''), ()=>{ p.miles += delta; });
+}
+
+/* Tapping a city cycles its visit count: 0 → 1 → (→ 2) → 0. */
+function toggleCity(city){
+  const p = cur();
+  const max = maxVisits();
+  const next = (visitCount(p, city) + 1) % (max + 1);
+  const detail = cityName(city) + (max > 1 ? ' — now '+next+' of '+max+' visits' : '');
+  commit(next ? 'Checked off city' : 'Unchecked city', detail, ()=>{
+    p.visited = p.visited.filter(c=>c!==city);
+    for(let i=0;i<next;i++) p.visited.push(city);
+  });
+}
+
+function endTurn(){
+  commit('End of turn', '', ()=>{ advanceTurn(); });
+}
+</script>
+<script>
+/* ==========================================================================
+   Rendering
+   ========================================================================== */
+const app = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const go  = (screen, sub) => { UI.screen = screen; UI.sub = sub||null; UI.tmp = {}; render(); };
+const sub = s => { UI.sub = s; UI.tmp = {}; render(); };
+
+function citySelect(name, value, only){
+  const list = only ? CITIES.filter(c=>only.indexOf(c.id)>=0) : CITIES;
+  return '<select data-in="'+name+'"><option value="">Select a city…</option>' +
+    list.map(c=>'<option value="'+c.id+'"'+(value===c.id?' selected':'')+'>'+c.n+'. '+esc(c.name)+' ('+c.id+')</option>').join('') +
+    '</select>';
+}
+function oppSelect(name, value){
+  return '<select data-in="'+name+'"><option value="">Select a player…</option>' +
+    opponents(cur()).map(o=>'<option value="'+o.id+'"'+(value===o.id?' selected':'')+'>'+esc(o.name)+'</option>').join('') +
+    '</select>';
+}
+
+/* ---------- shared bits ---------- */
+function header(title, backTo){
+  return '<div class="top"><div class="top-row">' +
+    (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : '') +
+    '<div class="brand">'+esc(title)+'</div><div class="spacer"></div>' +
+    (G && G.status==='playing' ? '<button class="btn chipbtn ghost" data-act="undo" '+(G.log.length?'':'disabled')+'>Undo</button>' : '') +
+    '</div></div>';
+}
+
+/* Outline = not yet, tinted = one visit, solid = done. In the 40-city game a
+   city needs two visits, so the middle state is the one that matters. */
+function cityChips(p){
+  const max = maxVisits();
+  return '<div class="chips">' + CITIES.map(c=>{
+    const n = visitCount(p, c.id);
+    const cls = ['chip'];
+    if(n >= max) cls.push('on'); else if(n > 0) cls.push('v1');
+    if(c.id===p.home) cls.push('home');
+    if(c.id===p.at) cls.push('here');
+    return '<span class="'+cls.join(' ')+'">'+c.id+(max>1&&n?'<i>'+n+'</i>':'')+'</span>';
+  }).join('') + '</div>';
+}
+
+function playerRow(p, i, active){
+  return '<div class="pcard'+(active?' active':'')+'">' +
+    '<div class="pawn p'+i+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+    '<div><div class="pname">'+esc(p.name)+'</div>' +
+    '<div class="pmeta">'+visitedCount(p)+'/'+G.target+' '+stopWord()+' · in '+esc(cityName(p.at)) +
+      (p.firstClass?' · <b>First class</b>':'') + (p.skip?' · skips '+p.skip:'') + '</div></div>' +
+    '<div class="pmiles">'+fmt(p.miles)+'<small>MILES</small></div></div>';
+}
+
+function nav(){
+  const t = (id,ico,label)=> '<button data-act="nav" data-v="'+id+'" class="'+(UI.screen===id?'on':'')+'">' +
+    '<span class="ni">'+ico+'</span><span>'+label+'</span></button>';
+  return '<div class="nav">'+t('turn','✈️','Turn')+t('scores','📋','Scores')+t('history','🕘','History')+'</div>';
+}
+
+/* ==========================================================================
+   Screens
+   ========================================================================== */
+
+function screenStart(){
+  const saved = load();
+  let h = '<div style="height:34px"></div><div class="center" style="margin-bottom:26px">' +
+    '<div style="font-size:52px">✈️</div>' +
+    '<h1 style="font-size:30px;margin:10px 0 4px;letter-spacing:-.02em">Frequent Flyer</h1>' +
+    '<div class="muted">Scorekeeper · Race Across the States</div></div>';
+
+  h += '<div class="card"><h3 style="margin-bottom:4px">Ready to start a new game?</h3>' +
+    '<p class="tiny muted" style="margin:6px 0 16px">Keep playing with the board, cards and pawns. ' +
+    'This app tracks miles, cities and whose turn it is.</p>' +
+    '<button class="btn primary big" data-act="new">Yes — start a new game</button>';
+  if(saved && saved.status === 'playing'){
+    h += '<button class="btn" data-act="resume">Resume game in progress<span class="sub">' +
+      saved.players.map(p=>esc(p.name)+' · '+fmt(p.miles)).join(' &nbsp;|&nbsp; ') + '</span></button>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function screenCount(){
+  let h = header('New game', 1);
+  h += '<div class="card"><h3>How many players?</h3><p class="hint" style="margin-top:8px">Frequent Flyer is for 2–4 players.</p>';
+  [2,3,4].forEach(n=> h += '<button class="btn big" data-act="count" data-v="'+n+'">'+n+' players</button>');
+  h += '</div>';
+  return h;
+}
+
+function screenSetup(){
+  const n = UI.tmp.count;
+  const d = UI.tmp.data || (UI.tmp.data = Array.from({length:n},()=>({name:'',home:''})));
+  const target = UI.tmp.target || (UI.tmp.target = 20);
+
+  let h = header('Players', 1);
+  h += '<p class="hint">Roll the 20-sided die to decide play order, then enter players highest roll first. No two players may share a home city.</p>';
+
+  d.forEach((p,i)=>{
+    const taken = d.filter((_,j)=>j!==i).map(x=>x.home).filter(Boolean);
+    h += '<div class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+      '<div class="pawn p'+i+'">'+(i+1)+'</div><b>Player '+(i+1)+'</b></div>' +
+      '<label class="fld"><span>Name</span><input type="text" data-in="name'+i+'" value="'+esc(p.name)+'" placeholder="Player '+(i+1)+'" autocomplete="off"></label>' +
+      '<label class="fld" style="margin-bottom:0"><span>Home city</span>' +
+      '<select data-in="home'+i+'"><option value="">Select a home city…</option>' +
+      CITIES.map(c=>'<option value="'+c.id+'"'+(p.home===c.id?' selected':'')+(taken.indexOf(c.id)>=0?' disabled':'')+'>' +
+        c.n+'. '+esc(c.name)+' ('+c.id+')'+(taken.indexOf(c.id)>=0?' — taken':'')+'</option>').join('') +
+      '</select></label></div>';
+  });
+
+  h += '<div class="card"><h3 style="font-size:16px">Game length</h3>' +
+    '<p class="hint" style="margin:6px 0 10px">Reach this many stops, then fly home to win. Your home city counts as your first.</p>' +
+    '<div class="seg">' + [20,40].map(t=>
+      '<button data-act="target" data-v="'+t+'" class="'+(target===t?'on':'')+'">'+t+' cities</button>').join('') +
+    '</div><div class="xtiny muted center">' + (target===40
+      ? 'Long game — every city twice, in any order'
+      : 'Standard game — all 20 cities, once each') + '</div></div>';
+
+  const ready = d.every(p=>p.home) ;
+  h += '<button class="btn primary big" data-act="begin" '+(ready?'':'disabled')+'>' +
+    (ready?'Start game':'Pick a home city for each player')+'</button>';
+  return h;
+}
+
+/* ---------------------------- turn screen ---------------------------- */
+
+function screenTurn(){
+  if(G.status === 'finished') return screenWin();
+  const p = cur();
+  let h = header('Turn', undefined);
+
+  h += '<div class="card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
+    '<div class="pawn p'+G.turn+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+    '<div><div style="font-weight:800;font-size:19px">'+esc(p.name)+'</div>' +
+    '<div class="tiny muted">Currently in '+esc(cityName(p.at))+
+      (p.firstClass?' · <b style="color:var(--first)">First class</b>':'')+'</div></div></div>';
+
+  h += '<div class="stat"><div class="n">'+fmt(p.miles)+'</div><div class="l">Frequent flyer miles</div></div>';
+
+  const pct = Math.min(100, Math.round(visitedCount(p)/G.target*100));
+  h += '<div class="bar"><i style="width:'+pct+'%"></i></div>' +
+    '<div class="xtiny muted center" style="margin-bottom:12px">'+visitedCount(p)+' of '+G.target+' '+stopWord()+' visited' +
+    (visitedCount(p)>=G.target ? ' — fly home to '+esc(cityName(p.home))+' to win!' : '') + '</div>';
+
+  h += cityChips(p) + '</div>';
+
+  if(p.mult > 1) h += '<div class="banner warn">⚡ '+p.mult+'× mileage is armed — it applies to your next completed flight.</div>';
+  if(G.bounties.length) h += G.bounties.map(b=>'<div class="banner">🎯 '+fmt(b.amount)+' miles waiting in '+esc(cityName(b.city))+' for the next player to land there.</div>').join('');
+
+  h += '<div class="actions">' +
+    act('deck','🃏','Card','Log a card you just drew') +
+    act('flight','✈️','Flight completed','Enter two cities and bank the miles') +
+    act('redeem','💳','Redeem miles','5,000 · 10,000 · 20,000') +
+    (p.hand.length ? act('hand','🎟️','Held cards','You are holding '+p.hand.length+' card'+(p.hand.length>1?'s':'')) : '') +
+    '</div>';
+
+  h += '<div class="btn-row" style="margin-top:12px">' +
+    '<button class="btn ghost" data-act="sub" data-v="cities" style="text-align:center">Edit cities</button>' +
+    '<button class="btn ghost" data-act="sub" data-v="adjust" style="text-align:center">Adjust miles</button></div>';
+
+  h += '<button class="btn primary big" data-act="endturn" style="margin-top:4px">End turn → ' +
+    esc(G.players[(G.turn+1)%G.players.length].name) + '</button>';
+
+  return h;
+}
+function act(v, ico, ttl, dsc){
+  return '<button class="act" data-act="sub" data-v="'+v+'"><span class="ico">'+ico+'</span>' +
+    '<span><span class="ttl">'+ttl+'</span><span class="dsc">'+dsc+'</span></span></button>';
+}
+
+function screenWin(){
+  const w = byId(G.winner);
+  let h = header('Game over', undefined);
+  h += '<div class="banner win">🏆 '+esc(w.name)+' wins!</div>';
+  h += '<div class="card"><div class="stat"><div class="n">'+fmt(w.miles)+'</div>' +
+    '<div class="l">Final mileage balance</div></div>' +
+    '<p class="center tiny muted">' + (maxVisits()>1
+      ? 'Visited all 20 cities twice — 40 stops'
+      : 'Visited all '+G.target+' cities') +
+    ' and returned home to '+esc(cityName(w.home))+'.</p></div>';
+  h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Final standings</h3>' +
+    G.players.slice().sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)
+      .map((p,i)=>playerRow(p, G.players.indexOf(p), p.id===G.winner)).join('') + '</div>';
+  h += '<button class="btn primary big" data-act="newconfirm">Start a new game</button>';
+  h += '<button class="btn ghost" data-act="unwin">Keep playing (undo win)</button>';
+  return h;
+}
+
+/* ---------------------------- sub-screens ---------------------------- */
+
+function subDeck(){
+  let h = header('Which deck?', 1);
+  h += '<p class="hint">Which pile did you draw from?</p>';
+  h += '<button class="btn big" data-act="deckpick" data-v="coach" style="border-color:var(--coach)">' +
+    '<span style="color:var(--coach)">Coach card</span><span class="sub">45 cards · drawn on a normal flight</span></button>';
+  h += '<button class="btn big" data-act="deckpick" data-v="first" style="border-color:var(--first)">' +
+    '<span style="color:var(--first)">First class card</span><span class="sub">25 cards · drawn while flying first class</span></button>';
+  return h;
+}
+
+function subCards(){
+  const deck = UI.tmp.deck;
+  const q = (UI.tmp.q||'').toLowerCase();
+  const list = CARDS.filter(c=>c.deck===deck && (!q || c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)));
+  let h = header(deck==='coach'?'Coach cards':'First class cards', 1);
+  h += '<label class="fld"><input type="text" data-in="q" value="'+esc(UI.tmp.q||'')+'" placeholder="Search cards…" autocomplete="off"></label>';
+  h += '<p class="hint">Tap the card you drew.</p><div class="list">';
+  h += list.map(c=>'<button class="row" data-act="cardpick" data-v="'+c.id+'">' +
+    '<span class="deckdot '+c.deck+'"></span>' +
+    '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span>' +
+    '</button>').join('') || '<div style="padding:18px" class="muted center">No cards match.</div>';
+  h += '</div>';
+  return h;
+}
+
+function subCard(){
+  const c = CARDS_BY_ID[UI.tmp.card];
+  const fromHand = !!UI.tmp.fromHand;
+  const ans = UI.tmp.ans || (UI.tmp.ans = {});
+  const fx = resolveFx(c, ans);
+  const needs = cardNeeds(c.fx);
+  const p = cur();
+
+  let h = header('Card', 1);
+  h += '<div class="gcard '+c.deck+'"><div class="gt">'+esc(c.title)+'</div>' +
+    '<div class="gx">'+esc(c.text)+'</div>' +
+    (c.footer?'<div class="gf">'+esc(c.footer)+'</div>':'') + '</div>';
+
+  const willHold = c.fx.hold && !fromHand;
+  if(willHold){
+    h += '<div class="banner">🎟️ This card is saved to '+esc(p.name)+'’s hand. Play it later from <b>Held cards</b>.</div>';
+    h += '<button class="btn primary big" data-act="apply">Save to hand</button>';
+    return h;
+  }
+
+  let missing = false;
+  // branch choice
+  if(c.fx.choice){
+    h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Choose one</h3>';
+    c.fx.choice.forEach((o,i)=>{
+      h += '<button class="btn'+(ans.branch===i?' primary':'')+'" data-act="branch" data-v="'+i+'">'+esc(o.label)+'</button>';
+    });
+    h += '</div>';
+    if(ans.branch == null) missing = true;
+  }
+
+  // city input
+  if(fx.fly === 'choose' || fx.addCity === 'choose'){
+    h += '<div class="card"><label class="fld" style="margin:0"><span>' +
+      (fx.addCity==='choose'?'City to add to your checklist':'City you are flying to') +
+      '</span>'+citySelect('city', ans.city)+'</label></div>';
+    if(!ans.city) missing = true;
+  } else if(Array.isArray(fx.fly)){
+    h += '<div class="card"><label class="fld" style="margin:0"><span>Which city?</span>' +
+      citySelect('city', ans.city, fx.fly)+'</label></div>';
+    if(!ans.city) missing = true;
+  }
+
+  // opponent input
+  if(fx.oppFly || fx.skipOpp || fx.stealCity || fx.stealCard){
+    h += '<div class="card"><label class="fld"'+((fx.stealCity||fx.stealCard)?'':' style="margin:0"')+'>' +
+      '<span>Which opponent?</span>'+oppSelect('oppId', ans.oppId)+'</label>';
+    if(!ans.oppId) missing = true;
+
+    if(fx.stealCity && ans.oppId){
+      const o = byId(ans.oppId);
+      const stealable = [...new Set(o.visited)].filter(cid=>cid !== o.home);
+      h += stealable.length
+        ? '<label class="fld" style="margin:0"><span>Take which city?</span>' + citySelect('oppCity', ans.oppCity, stealable) + '</label>'
+        : '<div class="banner warn" style="margin:0">'+esc(o.name)+' has no cities you can take (home city is protected).</div>';
+      if(stealable.length && !ans.oppCity) missing = true;
+      if(!stealable.length) missing = false;
+    }
+    if(fx.stealCard && ans.oppId){
+      const o = byId(ans.oppId);
+      h += o.hand.length
+        ? '<label class="fld" style="margin:0"><span>Take which card?</span><select data-in="cardId">' +
+            '<option value="">Select a card…</option>' +
+            o.hand.map(cid=>'<option value="'+cid+'"'+(ans.cardId===cid?' selected':'')+'>'+esc(CARDS_BY_ID[cid].title)+'</option>').join('') +
+          '</select></label>'
+        : '<div class="banner warn" style="margin:0">'+esc(o.name)+' is not holding any cards.</div>';
+      if(o.hand.length && !ans.cardId) missing = true;
+      if(!o.hand.length) missing = false;
+    }
+    h += '</div>';
+  }
+
+  if(fx.note) h += '<div class="banner">📋 '+esc(fx.note)+'</div>';
+  if(fx.fly && fx.flyEarns && ans.city && p.at)
+    h += '<div class="banner">Mileage '+esc(cityName(p.at))+' → '+esc(cityName(ans.city))+': <b>' +
+      fmt(milesBetween(p.at, ans.city) * (p.mult||1))+'</b> miles'+(p.mult>1?' ('+p.mult+'× applied)':'')+'</div>';
+
+  h += '<button class="btn primary big" data-act="apply" '+(missing?'disabled':'')+'>' +
+    (missing?'Answer the question above':'Apply card')+'</button>';
+  return h;
+}
+
+function subFlight(){
+  const p = cur();
+  const from = UI.tmp.from || (UI.tmp.from = p.at);
+  const to   = UI.tmp.to || '';
+  const noMiles = !!UI.tmp.noMiles;
+  const miles = to ? milesBetween(from, to) : 0;
+  const total = noMiles ? 0 : miles * (p.mult||1);
+
+  let h = header('Flight completed', 1);
+  h += '<div class="card">' +
+    '<label class="fld"><span>Departed from</span>'+citySelect('from', from)+'</label>' +
+    '<label class="fld" style="margin-bottom:0"><span>Landed in</span>'+citySelect('to', to)+'</label></div>';
+
+  if(to && to === from) h += '<div class="banner warn">Departure and destination are the same city.</div>';
+
+  h += '<label class="toggle"><input type="checkbox" data-in="noMiles"'+(noMiles?' checked':'')+'>' +
+    '<span><span class="tl">No miles earned on this flight</span>' +
+    '<span class="td">For a 20,000-mile automatic flight, Private Jet, Homesick or Brotherly Love.</span></span></label>';
+
+  if(to && to !== from){
+    h += '<div class="card">' +
+      '<div class="kv"><span>Base mileage</span><b>'+fmt(miles)+'</b></div>' +
+      (p.mult>1 ? '<div class="kv"><span>Card multiplier</span><b>'+p.mult+'×</b></div>' : '') +
+      '<div class="kv"><span><b>Miles earned</b></span><b class="delta '+(total?'up':'')+'">'+(total?'+':'')+fmt(total)+'</b></div>' +
+      '<div class="kv"><span>New balance</span><b>'+fmt(p.miles+total)+'</b></div>' +
+      (canVisit(p,to)?'<div class="kv"><span>Checklist</span><b style="color:var(--good)">'+esc(cityName(to))+' ✓' +
+        (maxVisits()>1?' ('+(visitCount(p,to)+1)+' of '+maxVisits()+')':'')+'</b></div>':'') +
+      '</div>';
+  }
+
+  h += '<button class="btn primary big" data-act="doflight" '+(to && to!==from?'':'disabled')+'>' +
+    (to && to!==from ? 'Confirm flight' : 'Pick both cities') + '</button>';
+  return h;
+}
+
+function subRedeem(){
+  const p = cur();
+  let h = header('Redeem miles', 1);
+  h += '<div class="stat" style="margin-bottom:14px"><div class="n">'+fmt(p.miles)+'</div><div class="l">Available</div></div>';
+  const opt = (kind, cost, ttl, dsc) => {
+    const ok = p.miles >= cost;
+    return '<button class="act" data-act="redeem" data-v="'+kind+'" '+(ok?'':'disabled style="opacity:.4"')+'>' +
+      '<span class="ico" style="font-size:13px;font-weight:800;color:var(--navy)">'+(cost/1000)+'k</span>' +
+      '<span><span class="ttl">'+ttl+'</span><span class="dsc">'+dsc+(ok?'':' · not enough miles')+'</span></span></button>';
+  };
+  h += '<div class="actions">' +
+    opt('choose', REDEEM.CHOOSE, 'Choose city to fly to', 'Pick your destination instead of rolling the die') +
+    opt('first', REDEEM.FIRSTCLASS, 'First class upgrade', 'One-way upgrade — move 2 spaces per pip') +
+    opt('auto', REDEEM.AUTO, 'Automatic flight', 'Fly straight to any city · earns no miles') +
+    '</div>';
+  return h;
+}
+
+function subAuto(){
+  const p = cur();
+  let h = header('Automatic flight', 1);
+  h += '<p class="hint">Spend 20,000 miles to fly straight to any city. This is a private jet, so no miles are earned.</p>';
+  h += '<div class="card"><label class="fld" style="margin:0"><span>Fly to</span>'+citySelect('city', UI.tmp.city)+'</label></div>';
+  if(UI.tmp.city) h += '<div class="card"><div class="kv"><span>Cost</span><b class="delta down">−20,000</b></div>' +
+    '<div class="kv"><span>New balance</span><b>'+fmt(p.miles-REDEEM.AUTO)+'</b></div>' +
+    '<div class="kv"><span>Checklist</span><b style="color:var(--good)">'+esc(cityName(UI.tmp.city))+' ✓</b></div></div>';
+  h += '<button class="btn primary big" data-act="doauto" '+(UI.tmp.city?'':'disabled')+'>Confirm automatic flight</button>';
+  return h;
+}
+
+function subHand(){
+  const p = cur();
+  let h = header('Held cards', 1);
+  h += '<p class="hint">Cards '+esc(p.name)+' has saved. Tap one to play it now.</p><div class="list">';
+  h += p.hand.map(cid=>{ const c = CARDS_BY_ID[cid];
+    return '<button class="row" data-act="playhand" data-v="'+cid+'"><span class="deckdot '+c.deck+'"></span>' +
+      '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span></button>';
+  }).join('') || '<div style="padding:18px" class="muted center">No held cards.</div>';
+  h += '</div>';
+  return h;
+}
+
+function subCities(){
+  const p = cur();
+  let h = header('Destination checklist', 1);
+  const max = maxVisits();
+  h += '<p class="hint">' + (max>1
+    ? 'Tap a city to cycle it for '+esc(p.name)+': not visited → once → twice → not visited.'
+    : 'Tap to check or uncheck a city for '+esc(p.name)+'.') +
+    ' Use this to fix a mistake.</p><div class="list">';
+  h += CITIES.map(c=>'<button class="row" data-act="togglecity" data-v="'+c.id+'">' +
+    '<span class="code">'+c.n+'</span>' +
+    '<span><span class="n">'+esc(c.name)+'</span><span class="d">'+c.id+(c.id===p.home?' · home city':'')+'</span></span>' +
+    '<span class="r">'+'✓'.repeat(visitCount(p,c.id))+'</span></button>').join('');
+  h += '</div>';
+  return h;
+}
+
+function subAdjust(){
+  const p = cur();
+  let h = header('Adjust miles', 1);
+  h += '<p class="hint">Manual correction for '+esc(p.name)+'. Logged like any other action so it can be undone.</p>';
+  h += '<div class="card"><label class="fld"><span>Amount (use a minus sign to subtract)</span>' +
+    '<input type="number" data-in="amt" value="'+esc(UI.tmp.amt||'')+'" placeholder="e.g. 500 or -500" inputmode="numeric"></label>' +
+    '<label class="fld" style="margin:0"><span>Reason (optional)</span>' +
+    '<input type="text" data-in="why" value="'+esc(UI.tmp.why||'')+'" placeholder="e.g. house rule"></label></div>';
+  const n = parseInt(UI.tmp.amt,10);
+  h += '<div class="card" id="adjPrev"'+(n?'':' style="display:none"')+'>' +
+    '<div class="kv"><span>New balance</span><b id="adjBal">'+fmt(p.miles+(n||0))+'</b></div></div>';
+  h += '<button class="btn primary big" id="adjBtn" data-act="doadjust" '+(n?'':'disabled')+'>Apply adjustment</button>';
+  return h;
+}
+
+function screenScores(){
+  let h = header('Scores', undefined);
+  h += G.players.map((p,i)=>{
+    return '<div class="card tight">' + playerRow(p,i,i===G.turn) +
+      '<div style="padding:8px 4px 2px">' + cityChips(p) + '</div></div>';
+  }).join('');
+  return h;
+}
+
+function screenHistory(){
+  let h = header('History', undefined);
+  h += '<div class="card">' + (G.log.length
+    ? G.log.slice(0,60).map(e=>'<div class="log"><div class="lw">'+esc(e.who)+' — '+esc(e.text)+'</div>' +
+        (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('')
+    : '<div class="muted center" style="padding:14px">Nothing logged yet.</div>') + '</div>';
+  if(G.log.length) h += '<button class="btn danger" data-act="undo">Undo last action</button>';
+  h += '<button class="btn ghost" data-act="newconfirm">Abandon game and start over</button>';
+  return h;
+}
+
+/* ==========================================================================
+   Router
+   ========================================================================== */
+function render(){
+  let h = '';
+  if(UI.screen === 'start')       h = screenStart();
+  else if(UI.screen === 'count')  h = screenCount();
+  else if(UI.screen === 'setup')  h = screenSetup();
+  else if(UI.screen === 'scores') h = screenScores() + nav();
+  else if(UI.screen === 'history')h = screenHistory() + nav();
+  else {
+    const map = {deck:subDeck, cards:subCards, card:subCard, flight:subFlight, redeem:subRedeem,
+                 auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust};
+    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + nav();
+  }
+  app.innerHTML = h;
+  window.scrollTo(0,0);
+}
+</script>
+<script>
+/* ==========================================================================
+   Events
+   ========================================================================== */
+
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if(!el || el.disabled) return;
+  const a = el.dataset.act, v = el.dataset.v;
+
+  switch(a){
+    case 'new':
+      UI.screen='count'; UI.tmp={}; render(); break;
+
+    case 'newconfirm':
+      if(confirm('Start a new game? The current game will be erased.')){ wipe(); G=null; go('start'); }
+      break;
+
+    case 'resume':
+      G = load(); go('turn'); break;
+
+    case 'count':
+      UI.tmp = {count:+v, target:20}; UI.screen='setup'; render(); break;
+
+    case 'target':
+      UI.tmp.target = +v; render(); break;
+
+    case 'begin': {
+      const d = UI.tmp.data;
+      const homes = d.map(p=>p.home);
+      if(new Set(homes).size !== homes.length){ alert('Each player needs a different home city.'); return; }
+      const players = d.map((p,i)=> newPlayer(p.name.trim() || ('Player '+(i+1)), p.home));
+      G = newGame(players, UI.tmp.target);
+      save(); go('turn');
+      break;
+    }
+
+    case 'nav':   UI.screen = v; UI.sub = null; UI.tmp = {}; render(); break;
+    case 'sub':   sub(v); break;
+    case 'back':
+      if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
+      else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
+      else if(UI.sub === 'cards'){ UI.sub='deck'; UI.tmp={}; }
+      else if(UI.sub === 'card'){ UI.sub = UI.tmp.fromHand ? 'hand' : 'cards'; UI.tmp={deck:UI.tmp.deck}; }
+      else if(UI.sub === 'auto'){ UI.sub='redeem'; UI.tmp={}; }
+      else { UI.sub = null; UI.tmp = {}; }
+      render(); break;
+
+    case 'undo':
+      undoLast(); UI.sub=null; UI.tmp={}; render(); break;
+
+    case 'unwin':
+      G.status='playing'; G.winner=null; save(); go('turn'); break;
+
+    /* --- cards --- */
+    case 'deckpick': UI.tmp = {deck:v}; UI.sub='cards'; render(); break;
+    case 'cardpick': UI.tmp = {deck:UI.tmp.deck, card:v, ans:{}}; UI.sub='card'; render(); break;
+    case 'playhand': UI.tmp = {card:v, fromHand:true, ans:{fromHand:true}}; UI.sub='card'; render(); break;
+    case 'branch':   UI.tmp.ans.branch = +v; render(); break;
+
+    case 'apply': {
+      const c = CARDS_BY_ID[UI.tmp.card];
+      const ans = UI.tmp.ans || {};
+      ans.fromHand = !!UI.tmp.fromHand;
+      playCard(c, ans);
+      UI.sub = null; UI.tmp = {}; render();
+      break;
+    }
+
+    /* --- flight --- */
+    case 'doflight':
+      completeFlight(UI.tmp.from, UI.tmp.to, !UI.tmp.noMiles);
+      UI.sub=null; UI.tmp={}; render(); break;
+
+    /* --- redeem --- */
+    case 'redeem':
+      if(v === 'auto'){ UI.sub='auto'; UI.tmp={}; render(); }
+      else { redeem(v); UI.sub=null; UI.tmp={}; render(); }
+      break;
+
+    case 'doauto':
+      redeem('auto', UI.tmp.city); UI.sub=null; UI.tmp={}; render(); break;
+
+    /* --- misc --- */
+    case 'togglecity': toggleCity(v); render(); break;
+
+    case 'doadjust':
+      adjustMiles(parseInt(UI.tmp.amt,10), (UI.tmp.why||'').trim());
+      UI.sub=null; UI.tmp={}; render(); break;
+
+    case 'endturn':
+      endTurn(); UI.sub=null; UI.tmp={}; render(); break;
+  }
+});
+
+/* Inputs: keep UI.tmp in sync. Selects and checkboxes re-render (they can
+   change what the form shows); text inputs do not, so typing is not interrupted. */
+app.addEventListener('input', e => {
+  const el = e.target.closest('[data-in]');
+  if(!el) return;
+  const k = el.dataset.in;
+  const val = el.type === 'checkbox' ? el.checked : el.value;
+
+  if(/^name(\d+)$/.test(k)){ UI.tmp.data[+k.slice(4)].name = val; return; }
+  if(/^home(\d+)$/.test(k)){ UI.tmp.data[+k.slice(4)].home = val; render(); return; }
+
+  if(UI.sub === 'card'){
+    UI.tmp.ans = UI.tmp.ans || {};
+    UI.tmp.ans[k] = val;
+    if(k === 'oppId'){ delete UI.tmp.ans.oppCity; delete UI.tmp.ans.cardId; }
+    render(); return;
+  }
+
+  UI.tmp[k] = val;
+
+  // The adjust screen has a live preview. Patch it in place rather than
+  // re-rendering, so the number field keeps focus while you type.
+  if(UI.sub === 'adjust' && k === 'amt'){
+    const n = parseInt(val,10);
+    const btn = document.getElementById('adjBtn');
+    const prev = document.getElementById('adjPrev');
+    const bal = document.getElementById('adjBal');
+    if(btn) btn.disabled = !n;
+    if(prev) prev.style.display = n ? '' : 'none';
+    if(bal) bal.textContent = fmt(cur().miles + (n||0));
+    return;
+  }
+
+  if(el.tagName === 'SELECT' || el.type === 'checkbox') render();
+});
+
+/* Search box filters as you type without losing focus. */
+app.addEventListener('input', e => {
+  if(e.target.dataset && e.target.dataset.in === 'q' && UI.sub === 'cards'){
+    UI.tmp.q = e.target.value;
+    const deck = UI.tmp.deck, q = UI.tmp.q.toLowerCase();
+    const list = CARDS.filter(c=>c.deck===deck && (!q || c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)));
+    const box = app.querySelector('.list');
+    if(box) box.innerHTML = list.map(c=>'<button class="row" data-act="cardpick" data-v="'+c.id+'">' +
+      '<span class="deckdot '+c.deck+'"></span>' +
+      '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span>' +
+      '</button>').join('') || '<div style="padding:18px" class="muted center">No cards match.</div>';
+  }
+});
+
+/* ==========================================================================
+   Boot
+   ========================================================================== */
+(function boot(){
+  const saved = load();
+  if(saved && saved.status === 'playing'){ G = saved; UI.screen = 'start'; }
+  render();
+})();
+
+/* Small sanity checks — surfaced in the console, not to players. */
+(function selfCheck(){
+  const errs = [];
+  if(CARDS.filter(c=>c.deck==='coach').length !== 45) errs.push('coach deck is not 45 cards');
+  if(CARDS.filter(c=>c.deck==='first').length !== 25) errs.push('first class deck is not 25 cards');
+  if(CITIES.length !== 20) errs.push('city list is not 20 cities');
+  for(let i=0;i<20;i++){
+    if(MILEAGE[i][i] !== 0) errs.push('non-zero diagonal at '+CITIES[i].id);
+    for(let j=i+1;j<20;j++) if(MILEAGE[i][j] !== MILEAGE[j][i])
+      errs.push('asymmetric: '+CITIES[i].id+'/'+CITIES[j].id);
+  }
+  const ids = CARDS.map(c=>c.id);
+  if(new Set(ids).size !== ids.length) errs.push('duplicate card ids');
+  window.__ffCheck = errs;
+  console.log(errs.length ? '❌ Frequent Flyer data errors: '+errs.join('; ')
+                          : '✅ Frequent Flyer data OK — 20 cities, symmetric mileage, 45 coach + 25 first class cards.');
+})();
+</script>
+</body>
+</html>
