@@ -111,6 +111,23 @@
   .pmiles{margin-left:auto;text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
   .pmiles small{display:block;font-weight:500;font-size:11px;color:var(--ink3);letter-spacing:.04em}
 
+  /* ---------- turn screen: current player beside opponent rail ---------- */
+  .turnrow{display:flex;gap:10px;align-items:flex-start}
+  .turnmain{flex:1;min-width:0}
+  .rail{width:98px;flex:none;display:grid;gap:8px}
+  .opp{display:grid;gap:1px;padding:8px;border-radius:11px;border:1px solid var(--line);
+    background:var(--surface2);cursor:pointer;text-align:left;width:100%}
+  .opp:active{transform:scale(.98)}
+  .opp .oh{display:flex;align-items:center;gap:6px;min-width:0}
+  /* Beats the 34px .pcard pawn on specificity — keep it descendant-scoped. */
+  .opp .pawn{width:20px;height:20px;border-radius:6px;font-size:11px}
+  .opp .onm{font-weight:700;font-size:12px;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opp .om{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+  .opp .oc{font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums}
+  .opp .nx{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:800;color:var(--navy);margin-bottom:2px}
+
   /* ---------- big stat ---------- */
   .stat{text-align:center;padding:6px 0 2px}
   .stat .n{font-size:44px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
@@ -189,6 +206,12 @@
     font-size:11px;font-weight:600;color:var(--ink3);display:grid;gap:3px;justify-items:center}
   .nav button.on{color:var(--navy)}
   .nav .ni{font-size:19px;line-height:1}
+
+  /* On the narrowest phones the rail and the mileage figure fight for room. */
+  @media (max-width:380px){
+    .rail{width:86px}
+    .stat .n{font-size:36px}
+  }
 
   .log{font-size:14px;padding:11px 0;border-bottom:1px solid var(--line)}
   .log:last-child{border-bottom:0}
@@ -720,11 +743,16 @@ function oppSelect(name, value){
 }
 
 /* ---------- shared bits ---------- */
+/* Setting up a new game leaves the previous game loaded in G, so Undo has to be
+   gated on the screen too — otherwise it offers to undo a game you're replacing. */
+const PREGAME = ['start','count','setup','order'];
+
 function header(title, backTo){
+  const canUndo = G && G.status==='playing' && PREGAME.indexOf(UI.screen) < 0;
   return '<div class="top"><div class="top-row">' +
     (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : '') +
     '<div class="brand">'+esc(title)+'</div><div class="spacer"></div>' +
-    (G && G.status==='playing' ? '<button class="btn chipbtn ghost" data-act="undo" '+(G.log.length?'':'disabled')+'>Undo</button>' : '') +
+    (canUndo ? '<button class="btn chipbtn ghost" data-act="undo" '+(G.log.length?'':'disabled')+'>Undo</button>' : '') +
     '</div></div>';
 }
 
@@ -794,7 +822,7 @@ function screenSetup(){
   const target = UI.tmp.target || (UI.tmp.target = 20);
 
   let h = header('Players', 1);
-  h += '<p class="hint">Roll the 20-sided die to decide play order, then enter players highest roll first. No two players may share a home city.</p>';
+  h += '<p class="hint">Enter everyone playing — you’ll set the play order next. No two players may share a home city.</p>';
 
   d.forEach((p,i)=>{
     const taken = d.filter((_,j)=>j!==i).map(x=>x.home).filter(Boolean);
@@ -818,18 +846,80 @@ function screenSetup(){
 
   const ready = d.every(p=>p.home) ;
   h += '<button class="btn primary big" data-act="begin" '+(ready?'':'disabled')+'>' +
-    (ready?'Start game':'Pick a home city for each player')+'</button>';
+    (ready?'Next: play order':'Pick a home city for each player')+'</button>';
+  return h;
+}
+
+/* ---------------------------- play order ---------------------------- */
+
+const ORDINALS = ['1st','2nd','3rd','4th'];
+/* Blank names become "Player N" at construction, so show that here too rather
+   than an empty row. */
+const setupName = (p,i) => p.name.trim() || ('Player '+(i+1));
+
+function screenOrder(){
+  const d = UI.tmp.data;
+  const order = UI.tmp.order || (UI.tmp.order = []);
+  const done = order.length === d.length;
+
+  let h = header('Play order', 1);
+  h += '<p class="hint">Roll the 20-sided die — highest roll goes first.</p>';
+
+  if(order.length){
+    h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">' +
+      (done ? 'Play order' : 'So far') + '</h3>';
+    h += order.map((di,pos)=>
+      '<div class="pcard"><div class="pawn p'+pos+'">'+(pos+1)+'</div>' +
+      '<div><div class="pname">'+esc(setupName(d[di],di))+'</div>' +
+      '<div class="pmeta">'+ORDINALS[pos]+' to play · home '+esc(cityName(d[di].home))+'</div></div></div>'
+    ).join('');
+    h += '<button class="btn ghost" data-act="unpick" style="margin:10px 0 0">' +
+      (done ? 'Change the order' : 'Change last pick') + '</button></div>';
+  }
+
+  if(done){
+    h += '<button class="btn primary big" data-act="startgame">Start game</button>';
+    return h;
+  }
+
+  h += '<div class="card"><h3 style="font-size:16px">Who goes ' + ORDINALS[order.length] + '?</h3>' +
+    '<p class="hint" style="margin:6px 0 12px">Tap a player.</p><div class="list">';
+  h += d.map((p,i)=> order.indexOf(i) >= 0 ? '' :
+    '<button class="row" data-act="pick" data-v="'+i+'">' +
+    '<span><span class="n">'+esc(setupName(p,i))+'</span>' +
+    '<span class="d">Home: '+esc(cityName(p.home))+'</span></span></button>').join('');
+  h += '</div></div>';
   return h;
 }
 
 /* ---------------------------- turn screen ---------------------------- */
+
+/* Opponents down the right of the turn screen, next-to-play first — that is the
+   one you weigh a move against. Tapping any tile opens the full scoreboard. */
+function oppRail(){
+  const n = G.players.length;
+  const rest = [];
+  for(let k = 1; k < n; k++) rest.push(G.players[(G.turn + k) % n]);
+
+  return '<div class="rail">' + rest.map((p,k)=>
+    '<button class="opp" data-act="nav" data-v="scores">' +
+    (k===0 ? '<div class="nx">Next</div>' : '') +
+    '<div class="oh"><div class="pawn p'+G.players.indexOf(p)+'">' +
+      esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+      '<div class="onm">'+esc(p.name)+'</div></div>' +
+    '<div class="om">'+fmt(p.miles)+'</div>' +
+    '<div class="oc">'+visitedCount(p)+'/'+G.target+' '+stopWord()+'</div>' +
+    '</button>').join('') + '</div>';
+}
 
 function screenTurn(){
   if(G.status === 'finished') return screenWin();
   const p = cur();
   let h = header('Turn', undefined);
 
-  h += '<div class="card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
+  h += '<div class="card"><div class="turnrow"><div class="turnmain">';
+
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
     '<div class="pawn p'+G.turn+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
     '<div><div style="font-weight:800;font-size:19px">'+esc(p.name)+'</div>' +
     '<div class="tiny muted">Currently in '+esc(cityName(p.at))+
@@ -841,6 +931,8 @@ function screenTurn(){
   h += '<div class="bar"><i style="width:'+pct+'%"></i></div>' +
     '<div class="xtiny muted center" style="margin-bottom:12px">'+visitedCount(p)+' of '+G.target+' '+stopWord()+' visited' +
     (visitedCount(p)>=G.target ? ' — fly home to '+esc(cityName(p.home))+' to win!' : '') + '</div>';
+
+  h += '</div>' + oppRail() + '</div>';   // close .turnmain, add rail, close .turnrow
 
   h += cityChips(p) + '</div>';
 
@@ -1131,6 +1223,7 @@ function render(){
   if(UI.screen === 'start')       h = screenStart();
   else if(UI.screen === 'count')  h = screenCount();
   else if(UI.screen === 'setup')  h = screenSetup();
+  else if(UI.screen === 'order')  h = screenOrder();
   else if(UI.screen === 'scores') h = screenScores() + nav();
   else if(UI.screen === 'history')h = screenHistory() + nav();
   else {
@@ -1170,10 +1263,34 @@ app.addEventListener('click', e => {
       UI.tmp.target = +v; render(); break;
 
     case 'begin': {
-      const d = UI.tmp.data;
-      const homes = d.map(p=>p.home);
+      const homes = UI.tmp.data.map(p=>p.home);
       if(new Set(homes).size !== homes.length){ alert('Each player needs a different home city.'); return; }
-      const players = d.map((p,i)=> newPlayer(p.name.trim() || ('Player '+(i+1)), p.home));
+      UI.screen = 'order'; UI.tmp.order = []; render();
+      break;
+    }
+
+    /* --- play order --- */
+    case 'pick': {
+      UI.tmp.order.push(+v);
+      // With one player left there is nothing to choose, so seat them.
+      if(UI.tmp.order.length === UI.tmp.data.length - 1){
+        UI.tmp.data.forEach((_,i)=>{ if(UI.tmp.order.indexOf(i) < 0) UI.tmp.order.push(i); });
+      }
+      render(); break;
+    }
+
+    /* Step back to the last real decision — never to a question with one answer,
+       which is what popping a single auto-seated player would leave. */
+    case 'unpick':
+      UI.tmp.order.pop();
+      if(UI.tmp.order.length === UI.tmp.data.length - 1) UI.tmp.order.pop();
+      render(); break;
+
+    case 'startgame': {
+      const players = UI.tmp.order.map(i=>{
+        const p = UI.tmp.data[i];
+        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home);
+      });
       G = newGame(players, UI.tmp.target);
       save(); go('turn');
       break;
@@ -1182,7 +1299,9 @@ app.addEventListener('click', e => {
     case 'nav':   UI.screen = v; UI.sub = null; UI.tmp = {}; render(); break;
     case 'sub':   sub(v); break;
     case 'back':
-      if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
+      // Keep UI.tmp.data going back to setup, or the entered names are lost.
+      if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
+      else if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
       else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
       else if(UI.sub === 'cards'){ UI.sub='deck'; UI.tmp={}; }
       else if(UI.sub === 'card'){ UI.sub = UI.tmp.fromHand ? 'hand' : 'cards'; UI.tmp={deck:UI.tmp.deck}; }
