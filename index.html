@@ -11,6 +11,7 @@
     --bg:#f4f6f9; --surface:#fff; --surface2:#eef1f6; --line:#d7dde7;
     --ink:#16202e; --ink2:#5b6879; --ink3:#8a95a5;
     --navy:#1f3f78; --navy2:#2b5296; --orange:#e07b2c;
+    --brand1:#1f3f78; --brand2:#33639e;
     --coach:#0f9d6e; --first:#7b2d94;
     --good:#12805c; --bad:#c0392b; --onGood:#fff;
     --shadow:0 1px 2px rgba(16,32,56,.08),0 4px 16px rgba(16,32,56,.06);
@@ -20,6 +21,7 @@
       --bg:#0e1420; --surface:#161e2c; --surface2:#1e2836; --line:#2b3648;
       --ink:#eef2f8; --ink2:#a3b0c2; --ink3:#71809a;
       --navy:#7aa2e8; --navy2:#5b86d6; --orange:#f0954b;
+      --brand1:#152540; --brand2:#25406b;
       --coach:#2bc490; --first:#c07ad8;
       --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
       --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
@@ -28,14 +30,14 @@
   :root[data-theme="light"]{
     --bg:#f4f6f9; --surface:#fff; --surface2:#eef1f6; --line:#d7dde7;
     --ink:#16202e; --ink2:#5b6879; --ink3:#8a95a5;
-    --navy:#1f3f78; --navy2:#2b5296; --orange:#e07b2c;
+    --navy:#1f3f78; --navy2:#2b5296; --orange:#e07b2c; --brand1:#1f3f78; --brand2:#33639e;
     --coach:#0f9d6e; --first:#7b2d94; --good:#12805c; --bad:#c0392b; --onGood:#fff;
     --shadow:0 1px 2px rgba(16,32,56,.08),0 4px 16px rgba(16,32,56,.06);
   }
   :root[data-theme="dark"]{
     --bg:#0e1420; --surface:#161e2c; --surface2:#1e2836; --line:#2b3648;
     --ink:#eef2f8; --ink2:#a3b0c2; --ink3:#71809a;
-    --navy:#7aa2e8; --navy2:#5b86d6; --orange:#f0954b;
+    --navy:#7aa2e8; --navy2:#5b86d6; --orange:#f0954b; --brand1:#152540; --brand2:#25406b;
     --coach:#2bc490; --first:#c07ad8; --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
   }
@@ -56,6 +58,24 @@
   .top-row{display:flex;align-items:center;gap:10px}
   .brand{font-weight:800;letter-spacing:.06em;font-size:13px;color:var(--navy);text-transform:uppercase}
   .spacer{flex:1}
+  .top-row .mk{flex:none;margin-right:-2px}
+
+  /* ---------- brand ---------- */
+  .mk{display:block}
+  .logo{display:flex;align-items:center;gap:12px;justify-content:center}
+  .logo .wm{text-align:left}
+  .logo .w1{font-weight:800;text-transform:uppercase;letter-spacing:.01em;line-height:1;
+    font-size:26px;white-space:nowrap}
+  .logo .rule{height:2px;border-radius:2px;background:var(--orange);margin:6px 0 5px}
+  .logo .w2{font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+    line-height:1;opacity:.8}
+  /* White-on-navy panel, so the wordmark needs its own ground in both themes. */
+  .hero{border-radius:18px;padding:30px 18px 28px;margin-bottom:20px;color:#fff;
+    background:linear-gradient(158deg,var(--brand1) 0%,var(--brand2) 100%)}
+  .hero .w2{opacity:.72}
+  .stamp{display:inline-block;border:3px solid var(--orange);color:var(--orange);
+    border-radius:10px;padding:5px 14px;font-size:19px;font-weight:800;letter-spacing:.16em;
+    text-transform:uppercase;transform:rotate(-6deg)}
 
   /* ---------- cards / surfaces ---------- */
   .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
@@ -99,6 +119,17 @@
     border:1px solid var(--line);background:var(--surface);color:var(--ink)}
   input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px}
 
+  /* A city field: looks like the inputs above it, but opens the search screen.
+     Twenty cities is more than a native dropdown wants to be on a phone. */
+  .pick{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+    padding:13px 14px;border-radius:11px;border:1px solid var(--line);background:var(--surface)}
+  .pick:active{background:var(--surface2)}
+  .pick .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .pick.empty .pn{color:var(--ink3);font-weight:400}
+  .pick .pc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;
+    letter-spacing:.08em;color:var(--navy);background:var(--surface2);padding:3px 7px;border-radius:6px}
+  .pick .pa{color:var(--ink3);font-weight:700}
+
   /* ---------- player strip ---------- */
   .pcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:13px;
     border:1px solid var(--line);background:var(--surface);margin-bottom:8px}
@@ -111,7 +142,20 @@
   .pmiles{margin-left:auto;text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
   .pmiles small{display:block;font-weight:500;font-size:11px;color:var(--ink3);letter-spacing:.04em}
 
-  /* ---------- turn screen: current player beside opponent rail ---------- */
+  /* ---------- turn screen: the current player's boarding pass ---------- */
+  .pass{position:relative}
+  .pass .stub{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:-4px 0 12px;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+  .pass .stub .sl{color:var(--orange)}
+  .pass .stub .sr{color:var(--ink3)}
+  /* Torn edge: the dashed line runs the full width of the card and a page-coloured
+     disc at each end eats 18px of the card border, so it reads as a punched notch. */
+  .perf{position:relative;height:0;border-top:1px dashed var(--line);margin:14px -16px}
+  .perf::before,.perf::after{content:'';position:absolute;top:-9px;width:18px;height:18px;
+    border-radius:50%;background:var(--bg)}
+  .perf::before{left:-9px}
+  .perf::after{right:-9px}
+
   .turnrow{display:flex;gap:10px;align-items:flex-start}
   .turnmain{flex:1;min-width:0}
   .rail{width:98px;flex:none;display:grid;gap:8px}
@@ -139,6 +183,8 @@
     border:1px solid var(--line);color:var(--ink3);background:var(--surface2)}
   .chip.v1{border-color:var(--good);color:var(--good)}
   .chip.on{background:var(--good);border-color:var(--good);color:var(--onGood)}
+  /* Board number, so a chip can be matched against the board without counting. */
+  .chip .cn{font-weight:800;opacity:.5;margin-right:4px;font-variant-numeric:tabular-nums}
   .chip i{font-style:normal;font-size:9px;vertical-align:super;margin-left:2px;opacity:.85}
   .chip.home::after{content:'⌂';margin-left:4px;opacity:.75;font-weight:400}
   .chip.here{box-shadow:0 0 0 2px var(--orange)}
@@ -198,10 +244,18 @@
   .toggle .tl{display:block;font-size:14px;font-weight:600}
   .toggle .td{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
 
-  /* ---------- bottom nav ---------- */
-  .nav{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;
-    background:var(--surface);border-top:1px solid var(--line);
-    padding-bottom:env(safe-area-inset-bottom)}
+  /* ---------- bottom dock: End turn bar above the tab bar ----------
+     One fixed container so the two bars stack without either guessing the
+     other's height. #app's bottom padding is measured off it in render(). */
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
+    border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);
+    box-shadow:0 -4px 16px rgba(16,32,56,.07)}
+  .endbar{max-width:560px;margin:0 auto;padding:10px 14px 4px}
+  .endbar .btn{margin-bottom:0}
+  /* A flight has just been logged — draw the eye to the button that follows it. */
+  .endbar.ready .btn{box-shadow:0 0 0 3px color-mix(in srgb,var(--orange) 55%,transparent)}
+
+  .nav{display:flex}
   .nav button{flex:1;padding:11px 4px 10px;border:0;background:none;cursor:pointer;
     font-size:11px;font-weight:600;color:var(--ink3);display:grid;gap:3px;justify-items:center}
   .nav button.on{color:var(--navy)}
@@ -211,6 +265,7 @@
   @media (max-width:380px){
     .rail{width:86px}
     .stat .n{font-size:36px}
+    .logo .w1{font-size:21px}
   }
 
   .log{font-size:14px;padding:11px 0;border-bottom:1px solid var(--line)}
@@ -730,11 +785,15 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const go  = (screen, sub) => { UI.screen = screen; UI.sub = sub||null; UI.tmp = {}; render(); };
 const sub = s => { UI.sub = s; UI.tmp = {}; render(); };
 
-function citySelect(name, value, only){
-  const list = only ? CITIES.filter(c=>only.indexOf(c.id)>=0) : CITIES;
-  return '<select data-in="'+name+'"><option value="">Select a city…</option>' +
-    list.map(c=>'<option value="'+c.id+'"'+(value===c.id?' selected':'')+'>'+c.n+'. '+esc(c.name)+' ('+c.id+')</option>').join('') +
-    '</select>';
+/* A city field opens the search screen instead of a native dropdown — twenty
+   cities is more than a phone dropdown wants to be. `only` restricts the list. */
+function cityField(name, value, only){
+  const c = value ? CITIES[CIDX[value]] : null;
+  return '<button class="pick'+(c?'':' empty')+'" data-act="cityopen" data-v="'+name+'"' +
+    (only ? ' data-only="'+only.join(',')+'"' : '') + '>' +
+    '<span class="pn">' + (c ? c.n+'. '+esc(c.name) : 'Select a city…') + '</span>' +
+    (c ? '<span class="pc">'+c.id+'</span>' : '') +
+    '<span class="pa">›</span></button>';
 }
 function oppSelect(name, value){
   return '<select data-in="'+name+'"><option value="">Select a player…</option>' +
@@ -742,15 +801,34 @@ function oppSelect(name, value){
     '</select>';
 }
 
+/* ---------- brand ---------- */
+/* Drawn inline rather than linked, so the app still works with no network. */
+function mark(size){
+  return '<svg class="mk" width="'+size+'" height="'+size+'" viewBox="0 0 44 44" aria-hidden="true">' +
+    '<rect width="44" height="44" rx="12" style="fill:var(--orange)"/>' +
+    '<g transform="rotate(45 22 22)" fill="#fff">' +
+      '<rect x="20" y="7" width="4" height="29" rx="2"/>' +
+      '<polygon points="22,15 34,27 34,30 22,24 10,30 10,27"/>' +
+      '<polygon points="22,30 28,35 28,37 22,34.5 16,37 16,35"/>' +
+    '</g></svg>';
+}
+function logo(size){
+  return '<div class="logo">'+mark(size) +
+    '<div class="wm"><div class="w1">Frequent Flyer</div>' +
+    '<div class="rule"></div><div class="w2">Race Across the States</div></div></div>';
+}
+
 /* ---------- shared bits ---------- */
 /* Setting up a new game leaves the previous game loaded in G, so Undo has to be
    gated on the screen too — otherwise it offers to undo a game you're replacing. */
 const PREGAME = ['start','count','setup','order'];
 
+/* The mark takes the Back button's slot rather than sitting beside it — on a
+   320px bar, back + mark + title + undo is one element too many. */
 function header(title, backTo){
   const canUndo = G && G.status==='playing' && PREGAME.indexOf(UI.screen) < 0;
   return '<div class="top"><div class="top-row">' +
-    (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : '') +
+    (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : mark(20)) +
     '<div class="brand">'+esc(title)+'</div><div class="spacer"></div>' +
     (canUndo ? '<button class="btn chipbtn ghost" data-act="undo" '+(G.log.length?'':'disabled')+'>Undo</button>' : '') +
     '</div></div>';
@@ -766,7 +844,8 @@ function cityChips(p){
     if(n >= max) cls.push('on'); else if(n > 0) cls.push('v1');
     if(c.id===p.home) cls.push('home');
     if(c.id===p.at) cls.push('here');
-    return '<span class="'+cls.join(' ')+'">'+c.id+(max>1&&n?'<i>'+n+'</i>':'')+'</span>';
+    return '<span class="'+cls.join(' ')+'"><span class="cn">'+c.n+'</span>'+c.id +
+      (max>1&&n?'<i>'+n+'</i>':'')+'</span>';
   }).join('') + '</div>';
 }
 
@@ -779,10 +858,22 @@ function playerRow(p, i, active){
     '<div class="pmiles">'+fmt(p.miles)+'<small>MILES</small></div></div>';
 }
 
-function nav(){
+function navBar(){
   const t = (id,ico,label)=> '<button data-act="nav" data-v="'+id+'" class="'+(UI.screen===id?'on':'')+'">' +
     '<span class="ni">'+ico+'</span><span>'+label+'</span></button>';
   return '<div class="nav">'+t('turn','✈️','Turn')+t('scores','📋','Scores')+t('history','🕘','History')+'</div>';
+}
+
+/* Ending a turn is the one thing you do every single turn, so it rides in a
+   fixed dock with the tab bar instead of at the bottom of a scrolling page. */
+function dock(withEndTurn){
+  let h = '<div class="dock">';
+  if(withEndTurn){
+    h += '<div class="endbar'+(UI.flash?' ready':'')+'">' +
+      '<button class="btn primary big" data-act="endturn">End turn → ' +
+      esc(G.players[(G.turn+1)%G.players.length].name) + '</button></div>';
+  }
+  return h + navBar() + '</div>';
 }
 
 /* ==========================================================================
@@ -791,10 +882,9 @@ function nav(){
 
 function screenStart(){
   const saved = load();
-  let h = '<div style="height:34px"></div><div class="center" style="margin-bottom:26px">' +
-    '<div style="font-size:52px">✈️</div>' +
-    '<h1 style="font-size:30px;margin:10px 0 4px;letter-spacing:-.02em">Frequent Flyer</h1>' +
-    '<div class="muted">Scorekeeper · Race Across the States</div></div>';
+  let h = '<div style="height:26px"></div><div class="hero">' + logo(44) +
+    '<div class="center xtiny" style="margin-top:20px;opacity:.75;' +
+      'letter-spacing:.16em;text-transform:uppercase;font-weight:700">Scorekeeper</div></div>';
 
   h += '<div class="card"><h3 style="margin-bottom:4px">Ready to start a new game?</h3>' +
     '<p class="tiny muted" style="margin:6px 0 16px">Keep playing with the board, cards and pawns. ' +
@@ -917,7 +1007,12 @@ function screenTurn(){
   const p = cur();
   let h = header('Turn', undefined);
 
-  h += '<div class="card"><div class="turnrow"><div class="turnmain">';
+  if(UI.flash) h += '<div class="banner" style="border-color:var(--good);color:var(--good)">' +
+    '✈️ <b>'+esc(UI.flash)+'</b> — anything else this turn?</div>';
+
+  h += '<div class="card pass"><div class="stub">' +
+    '<span class="sl">Boarding pass</span><span class="sr">Frequent Flyer</span></div>' +
+    '<div class="turnrow"><div class="turnmain">';
 
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
     '<div class="pawn p'+G.turn+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
@@ -934,7 +1029,7 @@ function screenTurn(){
 
   h += '</div>' + oppRail() + '</div>';   // close .turnmain, add rail, close .turnrow
 
-  h += cityChips(p) + '</div>';
+  h += '<div class="perf"></div>' + cityChips(p) + '</div>';
 
   if(p.mult > 1) h += '<div class="banner warn">⚡ '+p.mult+'× mileage is armed — it applies to your next completed flight.</div>';
   if(G.bounties.length) h += G.bounties.map(b=>'<div class="banner">🎯 '+fmt(b.amount)+' miles waiting in '+esc(cityName(b.city))+' for the next player to land there.</div>').join('');
@@ -950,10 +1045,7 @@ function screenTurn(){
     '<button class="btn ghost" data-act="sub" data-v="cities" style="text-align:center">Edit cities</button>' +
     '<button class="btn ghost" data-act="sub" data-v="adjust" style="text-align:center">Adjust miles</button></div>';
 
-  h += '<button class="btn primary big" data-act="endturn" style="margin-top:4px">End turn → ' +
-    esc(G.players[(G.turn+1)%G.players.length].name) + '</button>';
-
-  return h;
+  return h;   // End turn lives in the dock, not here
 }
 function act(v, ico, ttl, dsc){
   return '<button class="act" data-act="sub" data-v="'+v+'"><span class="ico">'+ico+'</span>' +
@@ -963,6 +1055,7 @@ function act(v, ico, ttl, dsc){
 function screenWin(){
   const w = byId(G.winner);
   let h = header('Game over', undefined);
+  h += '<div class="center" style="margin:10px 0 18px"><span class="stamp">Arrived</span></div>';
   h += '<div class="banner win">🏆 '+esc(w.name)+' wins!</div>';
   h += '<div class="card"><div class="stat"><div class="n">'+fmt(w.miles)+'</div>' +
     '<div class="l">Final mileage balance</div></div>' +
@@ -1040,11 +1133,11 @@ function subCard(){
   if(fx.fly === 'choose' || fx.addCity === 'choose'){
     h += '<div class="card"><label class="fld" style="margin:0"><span>' +
       (fx.addCity==='choose'?'City to add to your checklist':'City you are flying to') +
-      '</span>'+citySelect('city', ans.city)+'</label></div>';
+      '</span>'+cityField('city', ans.city)+'</label></div>';
     if(!ans.city) missing = true;
   } else if(Array.isArray(fx.fly)){
     h += '<div class="card"><label class="fld" style="margin:0"><span>Which city?</span>' +
-      citySelect('city', ans.city, fx.fly)+'</label></div>';
+      cityField('city', ans.city, fx.fly)+'</label></div>';
     if(!ans.city) missing = true;
   }
 
@@ -1058,7 +1151,7 @@ function subCard(){
       const o = byId(ans.oppId);
       const stealable = [...new Set(o.visited)].filter(cid=>cid !== o.home);
       h += stealable.length
-        ? '<label class="fld" style="margin:0"><span>Take which city?</span>' + citySelect('oppCity', ans.oppCity, stealable) + '</label>'
+        ? '<label class="fld" style="margin:0"><span>Take which city?</span>' + cityField('oppCity', ans.oppCity, stealable) + '</label>'
         : '<div class="banner warn" style="margin:0">'+esc(o.name)+' has no cities you can take (home city is protected).</div>';
       if(stealable.length && !ans.oppCity) missing = true;
       if(!stealable.length) missing = false;
@@ -1097,8 +1190,8 @@ function subFlight(){
 
   let h = header('Flight completed', 1);
   h += '<div class="card">' +
-    '<label class="fld"><span>Departed from</span>'+citySelect('from', from)+'</label>' +
-    '<label class="fld" style="margin-bottom:0"><span>Landed in</span>'+citySelect('to', to)+'</label></div>';
+    '<label class="fld"><span>Departed from</span>'+cityField('from', from)+'</label>' +
+    '<label class="fld" style="margin-bottom:0"><span>Landed in</span>'+cityField('to', to)+'</label></div>';
 
   if(to && to === from) h += '<div class="banner warn">Departure and destination are the same city.</div>';
 
@@ -1144,7 +1237,7 @@ function subAuto(){
   const p = cur();
   let h = header('Automatic flight', 1);
   h += '<p class="hint">Spend 20,000 miles to fly straight to any city. This is a private jet, so no miles are earned.</p>';
-  h += '<div class="card"><label class="fld" style="margin:0"><span>Fly to</span>'+citySelect('city', UI.tmp.city)+'</label></div>';
+  h += '<div class="card"><label class="fld" style="margin:0"><span>Fly to</span>'+cityField('city', UI.tmp.city)+'</label></div>';
   if(UI.tmp.city) h += '<div class="card"><div class="kv"><span>Cost</span><b class="delta down">−20,000</b></div>' +
     '<div class="kv"><span>New balance</span><b>'+fmt(p.miles-REDEEM.AUTO)+'</b></div>' +
     '<div class="kv"><span>Checklist</span><b style="color:var(--good)">'+esc(cityName(UI.tmp.city))+' ✓</b></div></div>';
@@ -1161,6 +1254,28 @@ function subHand(){
       '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span></button>';
   }).join('') || '<div style="padding:18px" class="muted center">No held cards.</div>';
   h += '</div>';
+  return h;
+}
+
+/* Shared by the picker's first paint and its live filter, so typing and
+   arriving on the screen can never disagree about what matches. */
+function cityMatches(){
+  const q = (UI.tmp._q||'').trim().toLowerCase();
+  const only = UI.tmp._only;
+  return CITIES.filter(c => (!only || only.indexOf(c.id) >= 0) &&
+    (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || String(c.n) === q));
+}
+function cityRows(list){
+  return list.map(c=>'<button class="row" data-act="citypicked" data-v="'+c.id+'">' +
+    '<span class="code">'+c.n+'</span>' +
+    '<span><span class="n">'+esc(c.name)+'</span><span class="d">'+c.id+'</span></span></button>').join('') ||
+    '<div style="padding:18px" class="muted center">No cities match.</div>';
+}
+function subCityPick(){
+  let h = header('Pick a city', 1);
+  h += '<label class="fld"><input type="text" data-in="_q" value="'+esc(UI.tmp._q||'')+'" ' +
+    'placeholder="Search by name, code or number…" autocomplete="off"></label>';
+  h += '<div class="list">' + cityRows(cityMatches()) + '</div>';
   return h;
 }
 
@@ -1224,14 +1339,21 @@ function render(){
   else if(UI.screen === 'count')  h = screenCount();
   else if(UI.screen === 'setup')  h = screenSetup();
   else if(UI.screen === 'order')  h = screenOrder();
-  else if(UI.screen === 'scores') h = screenScores() + nav();
-  else if(UI.screen === 'history')h = screenHistory() + nav();
+  else if(UI.screen === 'scores') h = screenScores() + dock(false);
+  else if(UI.screen === 'history')h = screenHistory() + dock(false);
   else {
     const map = {deck:subDeck, cards:subCards, card:subCard, flight:subFlight, redeem:subRedeem,
-                 auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust};
-    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + nav();
+                 auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust, citypick:subCityPick};
+    // A finished game gets the tab bar but no End turn — there is no next turn.
+    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + dock(G.status === 'playing');
   }
   app.innerHTML = h;
+
+  /* The dock is one bar on most screens and two on the turn screen, so reserve
+     its measured height rather than guessing a constant. */
+  const d = app.querySelector('.dock');
+  app.style.paddingBottom = (d ? d.offsetHeight + 24 : 24) + 'px';
+
   window.scrollTo(0,0);
 }
 </script>
@@ -1244,6 +1366,10 @@ app.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if(!el || el.disabled) return;
   const a = el.dataset.act, v = el.dataset.v;
+
+  /* The post-flight prompt is a one-shot: the next tap of anything dismisses it.
+     The two cases that complete a flight set it again below. */
+  UI.flash = null;
 
   switch(a){
     case 'new':
@@ -1298,9 +1424,34 @@ app.addEventListener('click', e => {
 
     case 'nav':   UI.screen = v; UI.sub = null; UI.tmp = {}; render(); break;
     case 'sub':   sub(v); break;
+
+    /* --- city picker ---
+       Deliberately not sub(), which wipes UI.tmp and would lose the half-filled
+       form we have to return to. The scratch keys are underscored because
+       UI.tmp.from is already the flight's departure and UI.tmp.q the card search. */
+    case 'cityopen':
+      UI.tmp._field = v;
+      UI.tmp._back  = UI.sub;
+      UI.tmp._only  = el.dataset.only ? el.dataset.only.split(',') : null;
+      UI.tmp._q     = '';
+      UI.sub = 'citypick'; render(); break;
+
+    case 'citypicked': {
+      const field = UI.tmp._field, back = UI.tmp._back;
+      // The card screen keeps its answers in UI.tmp.ans; everything else in UI.tmp.
+      if(back === 'card'){ UI.tmp.ans = UI.tmp.ans || {}; UI.tmp.ans[field] = v; }
+      else UI.tmp[field] = v;
+      delete UI.tmp._field; delete UI.tmp._back; delete UI.tmp._only; delete UI.tmp._q;
+      UI.sub = back; render(); break;
+    }
     case 'back':
       // Keep UI.tmp.data going back to setup, or the entered names are lost.
-      if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
+      // Same reason as cityopen: the form we came from is still half-filled in UI.tmp.
+      if(UI.sub === 'citypick'){
+        UI.sub = UI.tmp._back;
+        delete UI.tmp._field; delete UI.tmp._back; delete UI.tmp._only; delete UI.tmp._q;
+      }
+      else if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
       else if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
       else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
       else if(UI.sub === 'cards'){ UI.sub='deck'; UI.tmp={}; }
@@ -1331,9 +1482,13 @@ app.addEventListener('click', e => {
     }
 
     /* --- flight --- */
-    case 'doflight':
-      completeFlight(UI.tmp.from, UI.tmp.to, !UI.tmp.noMiles);
+    /* `p` stays valid across commit() — only undo's restore() reassigns G.players. */
+    case 'doflight': {
+      const p = cur(), to = UI.tmp.to, before = visitedCount(p);
+      completeFlight(UI.tmp.from, to, !UI.tmp.noMiles);
+      UI.flash = G.log[0].detail + (visitedCount(p) > before ? ' · '+to+' checked off' : '');
       UI.sub=null; UI.tmp={}; render(); break;
+    }
 
     /* --- redeem --- */
     case 'redeem':
@@ -1341,8 +1496,12 @@ app.addEventListener('click', e => {
       else { redeem(v); UI.sub=null; UI.tmp={}; render(); }
       break;
 
-    case 'doauto':
-      redeem('auto', UI.tmp.city); UI.sub=null; UI.tmp={}; render(); break;
+    case 'doauto': {
+      const p = cur(), city = UI.tmp.city, before = visitedCount(p);
+      redeem('auto', city);
+      UI.flash = G.log[0].detail + (visitedCount(p) > before ? ' · '+city+' checked off' : '');
+      UI.sub=null; UI.tmp={}; render(); break;
+    }
 
     /* --- misc --- */
     case 'togglecity': toggleCity(v); render(); break;
@@ -1390,6 +1549,15 @@ app.addEventListener('input', e => {
   }
 
   if(el.tagName === 'SELECT' || el.type === 'checkbox') render();
+});
+
+/* City picker filters as you type. Patched in place, like the card search below,
+   so the keyboard does not drop between keystrokes. */
+app.addEventListener('input', e => {
+  if(e.target.dataset && e.target.dataset.in === '_q' && UI.sub === 'citypick'){
+    const box = app.querySelector('.list');
+    if(box) box.innerHTML = cityRows(cityMatches());
+  }
 });
 
 /* Search box filters as you type without losing focus. */
