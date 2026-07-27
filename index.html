@@ -201,6 +201,9 @@
     cursor:pointer;width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
   .row:last-child{border-bottom:0}
   .row:active{background:var(--surface2)}
+  /* Every tappable row is a <button>; a plain div one is just a list item. */
+  div.row{cursor:default}
+  div.row:active{background:none}
   .row > span:not(.deckdot):not(.code):not(.r){display:block;min-width:0}
   .row .n{display:block;font-weight:700}
   .row .d{display:block;font-size:13px;color:var(--ink2);margin-top:1px}
@@ -228,6 +231,38 @@
     border:1px solid var(--line);background:var(--surface2)}
   .banner.warn{border-color:var(--orange);color:var(--orange)}
   .banner.win{border-color:var(--good);background:var(--good);color:var(--onGood);font-weight:700;text-align:center;font-size:17px}
+  /* The turn just ended itself. Says what happened, and offers the way back. */
+  .banner.flash-end{border-color:var(--good);display:grid;gap:9px}
+  .flash-end .fe-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .flash-end .fe-row span{flex:1;min-width:120px;color:var(--ink2)}
+  .flash-end .fe-row .btn{flex:none;border-color:var(--good);color:var(--good)}
+
+  /* ---------- sharing ---------- */
+  .sechd{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink3);margin-bottom:10px}
+  /* Four digits meant to be read aloud across a table, so they get to be big,
+     and spaced far enough apart to copy down one at a time. */
+  .codebig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;
+    font-size:46px;letter-spacing:.16em;text-indent:.16em;text-align:center;color:var(--navy);
+    background:var(--surface2);border-radius:11px;padding:16px 8px;margin-bottom:8px}
+  .sync{font-size:13px;text-align:center;color:var(--ink2);margin-bottom:12px}
+  .sync.ok{color:var(--good);font-weight:600}
+  .sync.bad{color:var(--bad);text-align:left;line-height:1.4}
+  /* A whole scoreboard card is the tap target, so it must not look like a button. */
+  .rowcard{display:block;width:100%;text-align:left;cursor:pointer}
+  .rowcard:active{transform:scale(.99)}
+
+  /* Spectator bar. Sticky above the sticky header, which is why the header's
+     own offset moves down by exactly this bar's height in view mode. */
+  .viewbar{position:sticky;top:0;z-index:25;height:44px;display:flex;align-items:center;gap:10px;
+    background:var(--navy);color:#fff;margin:0 -14px;padding:0 14px}
+  #app.viewing .top{top:44px}
+  .viewbar .vbe{font-size:16px}
+  .viewbar .vbt{flex:1;min-width:0;line-height:1.15}
+  .viewbar .vbt b{display:block;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .viewbar .vbt span{display:block;font-size:11px;opacity:.75}
+  .viewbar .btn{border-color:rgba(255,255,255,.45);color:#fff}
   .delta{font-weight:800;font-variant-numeric:tabular-nums}
   .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
   .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
@@ -366,6 +401,8 @@ const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
      hold           true — card is kept in hand and played later
      choice         [{label, fx}] — player picks one branch
      note           board-only instruction; no scoring change
+     again          true — the turn continues after this card, so don't auto-end it
+                    (a re-roll, or a card that sends you to draw another card)
    -------------------------------------------------------------------------- */
 
 const WISH = {hold:true, note:'Keep this card. Play it to choose your destination instead of rolling.'};
@@ -379,8 +416,8 @@ const CARDS = [
 {id:'C4', deck:'coach', title:'All Systems Go', text:'Move forward 3 spaces on this turn.', fx:{note:'Move your pawn forward 3 spaces.'}},
 {id:'C5', deck:'coach', title:'Baby On Board', text:'Move backward 3 spaces on this turn.', fx:{note:'Move your pawn backward 3 spaces.'}},
 {id:'C6', deck:'coach', title:'Brotherly Love', text:'Force the opponent of your choice to advance directly to Philadelphia on this turn. That player does not earn any miles on his or her flight to Philadelphia.', fx:{oppFly:'PHL'}},
-{id:'C7', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
-{id:'C8', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'C7', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'C8', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
 {id:'C9', deck:'coach', title:'Bulkhead Seating', text:'Move forward 4 spaces on this turn.', fx:{note:'Move your pawn forward 4 spaces.'}},
 {id:'C10',deck:'coach', title:'Strong Tailwinds', text:'Move forward 5 spaces on this turn.', fx:{note:'Move your pawn forward 5 spaces.'}},
 {id:'C11',deck:'coach', title:'Deja Vu', text:'Return immediately to the city you departed from on this flight and restart the same flight again on this turn.', fx:{note:'Return your pawn to the city you departed from and restart the flight.'}},
@@ -390,7 +427,7 @@ const CARDS = [
 {id:'C15',deck:'coach', title:'Window Seat', text:'Move forward 2 spaces on this turn.', fx:{note:'Move your pawn forward 2 spaces.'}},
 {id:'C16',deck:'coach', title:'Door #1 or Door #2', text:'You may either take the top card from the first class deck or collect 5,000 miles on this turn.', fx:{choice:[
   {label:'Collect 5,000 miles', fx:{miles:5000}},
-  {label:'Draw a first class card', fx:{note:'Draw the top card from the first class deck, then log it as a First Class card.'}}
+  {label:'Draw a first class card', fx:{again:true, note:'Draw the top card from the first class deck, then log it as a First Class card.'}}
 ]}},
 {id:'C17',deck:'coach', title:'Turbulence', text:'Lose your next turn and move backward 5 spaces on this turn.', fx:{skipSelf:1, note:'Move your pawn backward 5 spaces.'}},
 {id:'C18',deck:'coach', title:'Double Miles', text:'Earn double miles on the future flight of your choice if it is completed to its expected destination.', footer:'Multiply your miles earned times two', fx:{hold:true, multiplier:2}},
@@ -430,22 +467,22 @@ const CARDS = [
 {id:'F5', deck:'first', title:'Downgrade', text:'Move back to coach class for the remainder of this flight.', fx:{firstClass:false}},
 {id:'F6', deck:'first', title:'Super First Class', text:'Move three times the roll of the 20-sided die instead of the normal two times for the remainder of this flight only.', footer:'A roll of 20 would move 60 spaces', fx:{note:'For the rest of this flight, move 3× your die roll instead of 2×.'}},
 {id:'F7', deck:'first', title:'Grand Theft Air', text:'Take any one coach or first class card for yourself from any opponent on this turn.', fx:{stealCard:true}},
-{id:'F8', deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F8', deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
 {id:'F9', deck:'first', title:'Lottery Winner', text:'Collect 10,000 miles on this turn.', fx:{miles:10000}},
 {id:'F10',deck:'first', title:'Early Arrival', text:'Advance forward directly to your expected destination on this turn.', fx:{fly:'choose', flyEarns:true, note:'Advance straight to the destination you were already flying to.'}},
 {id:'F11',deck:'first', title:"Pilot's Orders", text:'You may either lose your next turn and forfeit 3,000 miles or continue the rest of this flight in coach.', fx:{choice:[
   {label:'Continue this flight in coach', fx:{firstClass:false}},
   {label:'Lose next turn and forfeit 3,000 miles', fx:{skipSelf:1, miles:-3000}}
 ]}},
-{id:'F12',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
-{id:'F13',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
-{id:'F14',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{note:'Roll the 20-sided die again.'}},
+{id:'F12',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F13',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F14',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
 {id:'F15',deck:'first', title:'No Show', text:'Force the player of your choice to miss their next turn.', fx:{skipOpp:1}},
 {id:'F16',deck:'first', title:'Private Jet', text:'Redeem this card for an automatic future flight to the city of your choice. Do not earn miles on that flight, since you will not be flying commercial air.', footer:'Card may be saved', fx:{hold:true, fly:'choose', flyEarns:false}},
 {id:'F17',deck:'first', title:'Quadruple Miles', text:'Earn quadruple miles on this flight if it is completed to its expected destination city.', footer:'Multiply your mileage by 4', fx:{multiplier:4}},
 {id:'F18',deck:'first', title:'Robbery', text:"Choose any one city from the opponent of your choice (except that opponent's home city) and remove it from their list and add it to your list on this turn.", fx:{stealCity:true}},
 {id:'F19',deck:'first', title:'City of Dreams', text:'Advance directly to the city of your choice on this turn. Earn miles from the city you departed from to the new destination.', fx:{fly:'choose', flyEarns:true}},
-{id:'F20',deck:'first', title:'Fortune Teller', text:'Select the next three cards from the coach card deck on this turn and select any one card for yourself; discard the two coach cards that you do not use.', fx:{note:'Draw the top 3 coach cards, keep 1, discard 2. Then log the card you kept.'}},
+{id:'F20',deck:'first', title:'Fortune Teller', text:'Select the next three cards from the coach card deck on this turn and select any one card for yourself; discard the two coach cards that you do not use.', fx:{again:true, note:'Draw the top 3 coach cards, keep 1, discard 2. Then log the card you kept.'}},
 {id:'F21',deck:'first', title:'White House', text:'Earn a bonus of 5,000 miles if you have already been to Washington DC.', fx:{milesIf:{cities:['IAD'], mode:'all', amount:5000}}},
 {id:'F22',deck:'first', title:'Queen City', text:'Advance directly to Charlotte on this turn and earn mileage from your departure city to Charlotte. If you have already visited Charlotte, earn a bonus of 5,000 miles.', fx:{fly:'CLT', flyEarns:true, bonusIfVisited:{city:'CLT', amount:5000}}},
 {id:'F23',deck:'first', title:'Georgia on My Mind', text:'Advance directly to Atlanta on this turn. Earn miles from your departure city to Atlanta.', fx:{fly:'ATL', flyEarns:true}},
@@ -454,6 +491,7 @@ const CARDS = [
 ];
 
 const CARDS_BY_ID = {}; CARDS.forEach(c=>CARDS_BY_ID[c.id]=c);
+
 </script>
 <script>
 /* ==========================================================================
@@ -463,6 +501,10 @@ const CARDS_BY_ID = {}; CARDS.forEach(c=>CARDS_BY_ID[c.id]=c);
 const KEY = 'frequentFlyer.game.v1';
 let G = null;          // game state
 let UI = {screen:'start', sub:null, tmp:{}};
+
+/* Spectator mode. Set once at boot and never cleared — a viewer writes nothing,
+   anywhere, so their own saved game survives opening someone else's link. */
+let VIEW = false;
 
 const fmt = n => n.toLocaleString('en-US');
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -492,8 +534,14 @@ function newGame(players, target){
   };
 }
 
-/* ---------- persistence ---------- */
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){} }
+/* ---------- persistence ----------
+   The one place the game is written down, which makes it the one place live
+   sharing has to hook into. */
+function save(){
+  if(VIEW) return;
+  try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){}
+  if(G && G.share && G.share.on) pushShare();
+}
 function load(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
 function wipe(){ try{ localStorage.removeItem(KEY); }catch(e){} }
 
@@ -775,6 +823,204 @@ function toggleCity(city){
 function endTurn(){
   commit('End of turn', '', ()=>{ advanceTurn(); });
 }
+
+/* Drawing a card or finishing a flight is the end of a turn, so do it for them
+   rather than making them tap End turn every single time. The banner that
+   follows names who just went and offers an undo, because occasionally the
+   turn wasn't over — see UI.flash in screenTurn(). */
+function autoEnd(what){
+  if(G.status !== 'playing'){ UI.flash = {text:what, ended:false}; return false; }
+  const who = cur().name;
+  endTurn();
+  UI.flash = {text:what, who, next:cur().name, ended:true};
+  return true;
+}
+
+/* ==========================================================================
+   Live sharing
+
+   One phone runs the game and pushes after every action; everyone else opens a
+   link and polls. It talks to a Supabase table over plain REST — no SDK, no
+   CDN script — so this stays one self-contained file.
+
+   Two rules hold the whole thing together:
+     · nothing happens until someone taps Start sharing, so a game that never
+       shares makes no network requests at all;
+     · every request is fire-and-forget. Losing signal must never cost a turn.
+   ========================================================================== */
+
+/* Both of these set = sharing is available. Either one blank and the app is
+   exactly as offline as it was before any of this existed.
+   The key is Supabase's publishable key, which belongs in a public page — the
+   table's row-level security is what actually decides who can do what. The
+   secret / service_role key must never appear here. */
+const SYNC_URL = 'https://mfjibppjqcodmrshfjbt.supabase.co';
+const SYNC_KEY = 'sb_publishable_BJ02mjBe1S6_56ZioeEC5g_RlDi7SFu';
+/* Hardcoded rather than read off location, so a link made from the Claude
+   artifact preview still points at the real site. */
+const SHARE_URL = 'https://matthewnhorowitz-bot.github.io/frequent-flyer/';
+
+const syncOn  = () => !!(SYNC_URL && SYNC_KEY);
+const gameUrl = code => SHARE_URL + '#' + code;
+
+/* One row per game, keyed by the four-digit code. `cols` keeps the reply down to
+   what's actually wanted — the poll asks for `rev` alone, three bytes of answer. */
+const sbRow  = (code, cols) => SYNC_URL + '/rest/v1/games?select=' + cols +
+  '&code=eq.' + encodeURIComponent(code);
+const sbHead = extra => Object.assign({apikey:SYNC_KEY, Authorization:'Bearer '+SYNC_KEY}, extra||{});
+
+/* A rejected request answers with an error object rather than a row array, so
+   turn anything that isn't a clean 2xx into a throw and let the caller treat it
+   as "couldn't reach it" — which is true, and is never "no such game". */
+function sbGet(url){
+  return fetch(url, {headers:sbHead()}).then(r => {
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(rows => Array.isArray(rows) ? rows : []);
+}
+
+let shareErr = false;   // the last push failed — the Share card says so instead of claiming live
+let shareAt  = 0;       // when the last push landed
+let viewErr  = false;   // a viewer's last poll failed
+let viewAt   = 0;       // the host's clock when the state we're showing was pushed
+
+/* ---------- what goes over the wire ----------
+   Every log entry carries a full player snapshot in `undo` for the undo stack.
+   That is most of G's bytes and is meaningless to someone watching, so it is
+   dropped — which also keeps a long game comfortably inside the size limit. */
+function shareState(){
+  return JSON.stringify({
+    v:1, target:G.target, turn:G.turn, status:G.status, winner:G.winner,
+    players:G.players, bounties:G.bounties,
+    log: G.log.slice(0,150).map(e=>({who:e.who, text:e.text, detail:e.detail, t:e.t})),
+  });
+}
+
+/* Rebuild something shaped exactly like G, so every existing screen renders a
+   watched game without knowing it is watching one. */
+function hydrateShare(raw){
+  const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return {
+    v:1, target:o.target||20, turn:o.turn||0, started:0,
+    status:o.status||'playing', winner:o.winner||null,
+    players:o.players||[], bounties:o.bounties||[],
+    log:(o.log||[]).map(e=>({id:uid(), t:e.t||0, who:e.who, text:e.text, detail:e.detail, undo:null})),
+  };
+}
+
+/* ---------- host ---------- */
+
+/* Four digits — short enough to say once and have everyone get it. */
+const SHARE_CODE = /^\d{4}$/;
+function makeCode(){
+  return String(Math.floor(Math.random()*10000)).padStart(4,'0');
+}
+
+/* Only 10,000 codes, so retry harder than the collision rate alone would need —
+   finished games stay in the database and keep their code taken. If the check
+   itself fails we take the code anyway: being offline shouldn't block sharing. */
+function startShare(){
+  let code = makeCode(), tries = 0;
+  const claim = () => sbGet(sbRow(code,'code')).catch(()=>[])
+    .then(rows => {
+      if(rows.length && ++tries < 12){ code = makeCode(); return claim(); }
+      G.share = {code, on:true};
+      shareErr = false; shareAt = 0;
+      save();
+      render();
+    });
+  return claim();
+}
+
+function stopShare(){
+  if(G.share) G.share.on = false;
+  clearTimeout(pushTimer);
+  save();
+}
+
+let pushTimer = null;
+/* One tap can produce several commits — a card effect, then the auto end of
+   turn — and only the last state is worth sending. */
+function pushShare(){
+  if(!syncOn()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(doPush, 600);
+}
+
+function doPush(){
+  const s = G && G.share;
+  if(!s || !s.on) return;
+  /* rev doubles as the change token viewers poll and the timestamp they show.
+     Wall-clock rather than a counter, so it still climbs after a page reload. */
+  const now = Date.now();
+  /* An upsert: first push for a code creates the row, every one after overwrites
+     it. `return=minimal` because the row we just sent is no use coming back. */
+  fetch(SYNC_URL + '/rest/v1/games', {
+    method:'POST',
+    headers: sbHead({'Content-Type':'application/json',
+                     Prefer:'resolution=merge-duplicates,return=minimal'}),
+    body: JSON.stringify({code:s.code, rev:now, t:now, state:shareState()}),
+  })
+  .then(r => { shareErr = !r.ok; if(r.ok) shareAt = now; })
+  .catch(() => { shareErr = true; })
+  .then(paintSync);
+}
+
+/* ---------- viewer ---------- */
+
+let pollTimer = null, seenRev = 0;
+const pollOff = () => { clearInterval(pollTimer); pollTimer = null; };
+const pollOn  = () => { pollOff(); pollTimer = setInterval(pollShare, 4000); };
+
+function bootView(code){
+  VIEW = true;
+  UI = {screen:'loading', sub:null, tmp:{}, code};
+  render();
+  document.addEventListener('visibilitychange', ()=>{
+    // A backgrounded phone shouldn't sit there burning data.
+    if(document.hidden) pollOff();
+    else if(G){ pollOn(); pollShare(); }
+  });
+  pullShare().then(ok => { if(ok) pollOn(); });
+}
+
+function pullShare(){
+  return sbGet(sbRow(UI.code, 'rev,t,state'))
+    .then(rows => {
+      const d = rows[0];
+      if(!d || !d.state){ UI.viewErr = 'notfound'; render(); return false; }
+      seenRev = Number(d.rev) || 0; viewAt = Number(d.t) || 0; viewErr = false;
+      G = hydrateShare(d.state);
+      UI.viewErr = null; UI.screen = 'turn';
+      render();
+      return true;
+    })
+    .catch(() => { UI.viewErr = 'offline'; render(); return false; });
+}
+
+/* Poll the tiny `rev` number, not the whole game — the state only comes down
+   when it has actually changed, which keeps a long session to a few hundred KB. */
+function pollShare(){
+  if(!UI.code) return;
+  sbGet(sbRow(UI.code,'rev')).then(rows => {
+    viewErr = false;
+    const rev = rows[0] ? Number(rows[0].rev) : 0;
+    if(rev && rev !== seenRev){
+      seenRev = rev;
+      return sbGet(sbRow(UI.code,'state')).then(rows2 => {
+        const s = rows2[0] && rows2[0].state;
+        if(!s) return;
+        G = hydrateShare(s); viewAt = rev;
+        // Re-rendering scrolls to the top; a spectator mid-way down the history
+        // did not ask to be yanked back up there.
+        const y = window.scrollY;
+        render();
+        window.scrollTo(0, y);
+      });
+    }
+    paintSync();
+  }).catch(() => { viewErr = true; paintSync(); });
+}
 </script>
 <script>
 /* ==========================================================================
@@ -826,7 +1072,7 @@ const PREGAME = ['start','count','setup','order'];
 /* The mark takes the Back button's slot rather than sitting beside it — on a
    320px bar, back + mark + title + undo is one element too many. */
 function header(title, backTo){
-  const canUndo = G && G.status==='playing' && PREGAME.indexOf(UI.screen) < 0;
+  const canUndo = !VIEW && G && G.status==='playing' && PREGAME.indexOf(UI.screen) < 0;
   return '<div class="top"><div class="top-row">' +
     (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : mark(20)) +
     '<div class="brand">'+esc(title)+'</div><div class="spacer"></div>' +
@@ -869,7 +1115,10 @@ function navBar(){
 function dock(withEndTurn){
   let h = '<div class="dock">';
   if(withEndTurn){
-    h += '<div class="endbar'+(UI.flash?' ready':'')+'">' +
+    // Ring the button only when the turn is still open. Once it has auto-ended
+    // there is nothing left to prompt for — the banner carries the undo instead.
+    const ring = UI.flash && !UI.flash.ended;
+    h += '<div class="endbar'+(ring?' ready':'')+'">' +
       '<button class="btn primary big" data-act="endturn">End turn → ' +
       esc(G.players[(G.turn+1)%G.players.length].name) + '</button></div>';
   }
@@ -894,6 +1143,9 @@ function screenStart(){
     h += '<button class="btn" data-act="resume">Resume game in progress<span class="sub">' +
       saved.players.map(p=>esc(p.name)+' · '+fmt(p.miles)).join(' &nbsp;|&nbsp; ') + '</span></button>';
   }
+  // For everyone at the table who isn't keeping score.
+  if(syncOn()) h += '<button class="btn ghost" data-act="watch">Watch someone else\'s game' +
+    '<span class="sub">Type the four digits they read out</span></button>';
   h += '</div>';
   return h;
 }
@@ -985,14 +1237,14 @@ function screenOrder(){
 /* ---------------------------- turn screen ---------------------------- */
 
 /* Opponents down the right of the turn screen, next-to-play first — that is the
-   one you weigh a move against. Tapping any tile opens the full scoreboard. */
+   one you weigh a move against. Tapping a tile opens that player's checklist. */
 function oppRail(){
   const n = G.players.length;
   const rest = [];
   for(let k = 1; k < n; k++) rest.push(G.players[(G.turn + k) % n]);
 
   return '<div class="rail">' + rest.map((p,k)=>
-    '<button class="opp" data-act="nav" data-v="scores">' +
+    '<button class="opp" data-act="player" data-v="'+p.id+'">' +
     (k===0 ? '<div class="nx">Next</div>' : '') +
     '<div class="oh"><div class="pawn p'+G.players.indexOf(p)+'">' +
       esc(p.name.slice(0,1).toUpperCase())+'</div>' +
@@ -1007,8 +1259,7 @@ function screenTurn(){
   const p = cur();
   let h = header('Turn', undefined);
 
-  if(UI.flash) h += '<div class="banner" style="border-color:var(--good);color:var(--good)">' +
-    '✈️ <b>'+esc(UI.flash)+'</b> — anything else this turn?</div>';
+  h += flashBanner();
 
   h += '<div class="card pass"><div class="stub">' +
     '<span class="sl">Boarding pass</span><span class="sr">Frequent Flyer</span></div>' +
@@ -1034,6 +1285,8 @@ function screenTurn(){
   if(p.mult > 1) h += '<div class="banner warn">⚡ '+p.mult+'× mileage is armed — it applies to your next completed flight.</div>';
   if(G.bounties.length) h += G.bounties.map(b=>'<div class="banner">🎯 '+fmt(b.amount)+' miles waiting in '+esc(cityName(b.city))+' for the next player to land there.</div>').join('');
 
+  if(VIEW) return h;   // a spectator gets the state, not the controls
+
   h += '<div class="actions">' +
     act('deck','🃏','Card','Log a card you just drew') +
     act('flight','✈️','Flight completed','Enter two cities and bank the miles') +
@@ -1046,6 +1299,20 @@ function screenTurn(){
     '<button class="btn ghost" data-act="sub" data-v="adjust" style="text-align:center">Adjust miles</button></div>';
 
   return h;   // End turn lives in the dock, not here
+}
+
+/* What just happened, and whether it took the turn with it.
+   `ended` — the app passed the turn on; offer the way back.
+   otherwise — the turn is still theirs; nudge them toward End turn. */
+function flashBanner(){
+  const f = UI.flash;
+  if(!f) return '';
+  if(!f.ended) return '<div class="banner" style="border-color:var(--good);color:var(--good)">' +
+    '✈️ <b>'+esc(f.text)+'</b> — anything else this turn?</div>';
+  return '<div class="banner flash-end">' +
+    '<div>✈️ <b>'+esc(f.who)+':</b> '+esc(f.text)+'</div>' +
+    '<div class="fe-row"><span>Turn passed to <b>'+esc(f.next)+'</b>.</span>' +
+    '<button class="btn chipbtn" data-act="undo">Undo — back to '+esc(f.who)+'</button></div></div>';
 }
 function act(v, ico, ttl, dsc){
   return '<button class="act" data-act="sub" data-v="'+v+'"><span class="ico">'+ico+'</span>' +
@@ -1311,10 +1578,12 @@ function subAdjust(){
 }
 
 function screenScores(){
-  let h = header('Scores', undefined);
+  let h = header('Scores', undefined) + shareCard();
+  // Every row opens that player's checklist, including your own.
   h += G.players.map((p,i)=>{
-    return '<div class="card tight">' + playerRow(p,i,i===G.turn) +
-      '<div style="padding:8px 4px 2px">' + cityChips(p) + '</div></div>';
+    return '<button class="card tight rowcard" data-act="player" data-v="'+p.id+'">' +
+      playerRow(p,i,i===G.turn) +
+      '<div style="padding:8px 4px 2px">' + cityChips(p) + '</div></button>';
   }).join('');
   return h;
 }
@@ -1325,8 +1594,130 @@ function screenHistory(){
     ? G.log.slice(0,60).map(e=>'<div class="log"><div class="lw">'+esc(e.who)+' — '+esc(e.text)+'</div>' +
         (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('')
     : '<div class="muted center" style="padding:14px">Nothing logged yet.</div>') + '</div>';
+  if(VIEW) return h;
   if(G.log.length) h += '<button class="btn danger" data-act="undo">Undo last action</button>';
   h += '<button class="btn ghost" data-act="newconfirm">Abandon game and start over</button>';
+  return h;
+}
+
+/* ---------------------------- one player ----------------------------
+   Read-only by design. Correcting somebody's cities stays on their own
+   turn, through Edit cities, so a correction lands in the log as theirs. */
+function screenPlayer(){
+  const p = byId(UI.tmp.pid) || cur();
+  const i = G.players.indexOf(p);
+  const max = maxVisits();
+  const left = CITIES.filter(c => visitCount(p, c.id) < max);
+
+  // .pcard brings its own border, so it doesn't want a .card around it here.
+  let h = header(p.name, 1) + playerRow(p, i, i === G.turn);
+
+  const flags = [];
+  if(i === G.turn && G.status === 'playing') flags.push('🎲 Playing now');
+  if(p.firstClass) flags.push('✨ Flying first class');
+  if(p.mult > 1)   flags.push('⚡ '+p.mult+'× mileage armed');
+  if(p.skip)       flags.push('⏸ Misses '+p.skip+' turn'+(p.skip>1?'s':''));
+  if(p.hand.length)flags.push('🎟️ Holding '+p.hand.length+' card'+(p.hand.length>1?'s':''));
+  if(flags.length) h += '<div class="banner">'+flags.map(esc).join(' · ')+'</div>';
+
+  h += '<div class="card"><h3 class="sechd">Checked off — '+visitedCount(p)+' of '+G.target+'</h3>' +
+    cityChips(p) + '</div>';
+
+  h += '<div class="card"><h3 class="sechd">Still to go — '+left.length+'</h3>';
+  h += left.length
+    ? '<div class="list">' + left.map(c=>{
+        const n = visitCount(p, c.id);
+        return '<div class="row"><span class="code">'+c.n+'</span>' +
+          '<span><span class="n">'+esc(c.name)+'</span>' +
+          '<span class="d">'+c.id+(c.id===p.home?' · home city':'')+'</span></span>' +
+          (max>1 ? '<span class="r">'+n+' of '+max+'</span>' : '') + '</div>';
+      }).join('') + '</div>'
+    : '<p class="tiny muted">Every city visited — now fly home to '+esc(cityName(p.home))+' to win.</p>';
+  h += '</div>';
+
+  const mine = G.log.filter(e => e.who === p.name).slice(0, 8);
+  if(mine.length) h += '<div class="card"><h3 class="sechd">Recent</h3>' +
+    mine.map(e=>'<div class="log"><div class="lw">'+esc(e.text)+'</div>' +
+      (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('') + '</div>';
+
+  return h;
+}
+
+/* ==========================================================================
+   Sharing — the host's panel and the spectator's bar
+   ========================================================================== */
+
+/* "12s ago" / "3m ago" — precise enough to tell live apart from stalled. */
+function ago(t){
+  const s = Math.max(0, Math.round((Date.now()-t)/1000));
+  if(s < 60)   return s+'s ago';
+  if(s < 3600) return Math.round(s/60)+'m ago';
+  return Math.round(s/3600)+'h ago';
+}
+
+function shareCard(){
+  if(VIEW || !syncOn() || !G) return '';
+  const s = G.share;
+  if(!s || !s.on) return '<div class="card"><h3 class="sechd">Share this game</h3>' +
+    '<p class="tiny muted" style="margin:2px 0 12px">Everyone else gets a link and follows the ' +
+    'scores on their own phone, updating as you play. They can watch, not touch.</p>' +
+    '<button class="btn primary" data-act="sharestart">Start sharing</button></div>';
+
+  return '<div class="card"><h3 class="sechd">Sharing live</h3>' +
+    '<div class="codebig">'+esc(s.code)+'</div>' +
+    '<p class="tiny muted center" style="margin:0 0 12px">Read that out, or send the link.</p>' +
+    '<div id="syncState">'+syncStatus()+'</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn" data-act="sharecopy" style="text-align:center">' +
+        (navigator.share ? 'Send link' : 'Copy link') + '</button>' +
+      '<button class="btn ghost" data-act="sharestop" style="text-align:center">Stop sharing</button>' +
+    '</div></div>';
+}
+
+function syncStatus(){
+  if(shareErr) return '<div class="sync bad">⚠️ Can\'t reach the server — anyone watching is ' +
+    'seeing an older scoreboard. Your game is unaffected.</div>';
+  if(!shareAt) return '<div class="sync">Sending…</div>';
+  return '<div class="sync ok">● Live · sent '+ago(shareAt)+'</div>';
+}
+
+function viewBar(){
+  if(!VIEW) return '';
+  return '<div class="viewbar"><span class="vbe">👀</span>' +
+    '<div class="vbt"><b>'+esc(UI.code||'')+'</b>' +
+    '<span id="viewState">'+viewStatus()+'</span></div>' +
+    '<button class="btn chipbtn ghost" data-act="leaveview">Leave</button></div>';
+}
+function viewStatus(){
+  // Don't claim to be watching a game we never found.
+  if(UI.viewErr === 'notfound') return 'No such game';
+  if(UI.viewErr === 'offline')  return 'Can\'t connect';
+  if(!G)      return 'Connecting…';
+  if(viewErr) return 'Reconnecting…';
+  return 'Watching · updated ' + (viewAt ? ago(viewAt) : 'just now');
+}
+
+/* The status ticks without a re-render: render() scrolls to the top, and nobody
+   asked to be sent there just because a poll came back. */
+function paintSync(){
+  const a = document.getElementById('syncState');
+  if(a) a.innerHTML = syncStatus();
+  const b = document.getElementById('viewState');
+  if(b) b.innerHTML = viewStatus();
+}
+
+function screenViewLoading(){
+  let h = '<div style="height:26px"></div><div class="hero">' + logo(44) + '</div>';
+  if(UI.viewErr === 'notfound') h += '<div class="card"><h3>No game with that code</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">Codes are four digits, like <b>4206</b>. Check it, ' +
+    'or ask whoever is running the game — they may have stopped sharing.</p>' +
+    '<button class="btn" data-act="leaveview">Back to my own game</button></div>';
+  else if(UI.viewErr === 'offline') h += '<div class="card"><h3>Can\'t reach the game</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">No connection, or the server isn\'t answering.</p>' +
+    '<button class="btn" data-act="retryview">Try again</button>' +
+    '<button class="btn ghost" data-act="leaveview">Back to my own game</button></div>';
+  else h += '<div class="card center"><p class="muted" style="padding:10px">Loading ' +
+    esc(UI.code||'game')+'…</p></div>';
   return h;
 }
 
@@ -1335,19 +1726,23 @@ function screenHistory(){
    ========================================================================== */
 function render(){
   let h = '';
-  if(UI.screen === 'start')       h = screenStart();
+  if(UI.screen === 'loading')     h = screenViewLoading();
+  else if(UI.screen === 'start')  h = screenStart();
   else if(UI.screen === 'count')  h = screenCount();
   else if(UI.screen === 'setup')  h = screenSetup();
   else if(UI.screen === 'order')  h = screenOrder();
   else if(UI.screen === 'scores') h = screenScores() + dock(false);
   else if(UI.screen === 'history')h = screenHistory() + dock(false);
+  else if(UI.screen === 'player') h = screenPlayer() + dock(false);
   else {
     const map = {deck:subDeck, cards:subCards, card:subCard, flight:subFlight, redeem:subRedeem,
                  auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust, citypick:subCityPick};
     // A finished game gets the tab bar but no End turn — there is no next turn.
-    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + dock(G.status === 'playing');
+    // Neither does a spectator, who has no turn to end.
+    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + dock(!VIEW && G.status === 'playing');
   }
-  app.innerHTML = h;
+  app.classList.toggle('viewing', VIEW);
+  app.innerHTML = viewBar() + h;
 
   /* The dock is one bar on most screens and two on the turn screen, so reserve
      its measured height rather than guessing a constant. */
@@ -1362,13 +1757,20 @@ function render(){
    Events
    ========================================================================== */
 
+const VIEW_ACTS = ['nav','player','back','leaveview','retryview'];
+
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if(!el || el.disabled) return;
   const a = el.dataset.act, v = el.dataset.v;
 
-  /* The post-flight prompt is a one-shot: the next tap of anything dismisses it.
-     The two cases that complete a flight set it again below. */
+  /* A spectator can navigate and nothing else. The read-only screens don't
+     render the controls in the first place; this is the belt to that's braces,
+     so a stale data-act can never mutate a watched game. */
+  if(VIEW && VIEW_ACTS.indexOf(a) < 0) return;
+
+  /* The post-action prompt is a one-shot: the next tap of anything dismisses it.
+     The cases that end a turn set it again below. */
   UI.flash = null;
 
   switch(a){
@@ -1425,6 +1827,39 @@ app.addEventListener('click', e => {
     case 'nav':   UI.screen = v; UI.sub = null; UI.tmp = {}; render(); break;
     case 'sub':   sub(v); break;
 
+    /* Reachable from the opponent rail and from any scoreboard row, so it
+       remembers which one to go back to. */
+    case 'player':
+      UI.tmp = {pid:v, pfrom:UI.screen};
+      UI.screen = 'player'; UI.sub = null; render(); break;
+
+    /* --- sharing --- */
+    case 'sharestart': startShare(); break;
+    case 'sharestop':  stopShare(); render(); break;
+
+    case 'sharecopy': {
+      const url = gameUrl(G.share.code);
+      if(navigator.share)
+        navigator.share({title:'Frequent Flyer', text:'Follow the game — code '+G.share.code, url}).catch(()=>{});
+      else if(navigator.clipboard)
+        navigator.clipboard.writeText(url).then(()=>alert('Link copied.')).catch(()=>prompt('Copy this link:', url));
+      else prompt('Copy this link:', url);
+      break;
+    }
+
+    case 'watch': {
+      // Spaces stripped, because a code read out loud gets typed "42 06".
+      const c = (prompt('Enter the 4-digit game code') || '').replace(/\s/g,'');
+      if(SHARE_CODE.test(c)){ location.hash = c; location.reload(); }
+      else if(c) alert('That is not a game code. They are four digits, like 4206.');
+      break;
+    }
+
+    /* Drop the code from the URL, then reload — the boot path is the only thing
+       that decides between watching and playing, so let it decide again. */
+    case 'leaveview': location.replace(location.pathname + location.search); break;
+    case 'retryview': pullShare().then(ok => { if(ok) pollOn(); }); break;
+
     /* --- city picker ---
        Deliberately not sub(), which wipes UI.tmp and would lose the half-filled
        form we have to return to. The scratch keys are underscored because
@@ -1451,6 +1886,8 @@ app.addEventListener('click', e => {
         UI.sub = UI.tmp._back;
         delete UI.tmp._field; delete UI.tmp._back; delete UI.tmp._only; delete UI.tmp._q;
       }
+      // Back to whichever screen the player was tapped on — rail or scoreboard.
+      else if(UI.screen === 'player'){ UI.screen = UI.tmp.pfrom || 'scores'; UI.tmp = {}; }
       else if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
       else if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
       else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
@@ -1476,7 +1913,16 @@ app.addEventListener('click', e => {
       const c = CARDS_BY_ID[UI.tmp.card];
       const ans = UI.tmp.ans || {};
       ans.fromHand = !!UI.tmp.fromHand;
+      /* Drawing a card is the end of a turn — except for a card that hands the
+         die straight back, and except for one played out of your hand, which
+         replaces your roll rather than following it. `flyIfNot` has to be read
+         before the card resolves, since landing there changes the answer. */
+      const fx = resolveFx(c, ans);
+      const again = !!fx.again || (!!fx.flyIfNot && hasVisited(cur(), fx.flyIfNot));
       playCard(c, ans);
+      const said = c.title + ' — ' + G.log[0].detail;
+      if(ans.fromHand || again) UI.flash = {text:said, ended:false};
+      else autoEnd(said);
       UI.sub = null; UI.tmp = {}; render();
       break;
     }
@@ -1486,7 +1932,7 @@ app.addEventListener('click', e => {
     case 'doflight': {
       const p = cur(), to = UI.tmp.to, before = visitedCount(p);
       completeFlight(UI.tmp.from, to, !UI.tmp.noMiles);
-      UI.flash = G.log[0].detail + (visitedCount(p) > before ? ' · '+to+' checked off' : '');
+      autoEnd(G.log[0].detail + (visitedCount(p) > before ? ' · '+to+' checked off' : ''));
       UI.sub=null; UI.tmp={}; render(); break;
     }
 
@@ -1499,7 +1945,7 @@ app.addEventListener('click', e => {
     case 'doauto': {
       const p = cur(), city = UI.tmp.city, before = visitedCount(p);
       redeem('auto', city);
-      UI.flash = G.log[0].detail + (visitedCount(p) > before ? ' · '+city+' checked off' : '');
+      autoEnd(G.log[0].detail + (visitedCount(p) > before ? ' · '+city+' checked off' : ''));
       UI.sub=null; UI.tmp={}; render(); break;
     }
 
@@ -1578,10 +2024,20 @@ app.addEventListener('input', e => {
    Boot
    ========================================================================== */
 (function boot(){
+  /* A share link's whole payload is its hash — #4206 — so one pattern test
+     separates "watch this game" from an ordinary visit. */
+  const code = decodeURIComponent((location.hash||'').replace(/^#\/?/,'')).trim();
+  if(syncOn() && SHARE_CODE.test(code)) return bootView(code);
+
   const saved = load();
   if(saved && saved.status === 'playing'){ G = saved; UI.screen = 'start'; }
   render();
 })();
+
+/* Opening a share link while the app is already on screen only changes the
+   hash, which is not a page load — so make it one. Also covers backing out of
+   a watched game with the browser's own Back button. */
+window.addEventListener('hashchange', () => location.reload());
 
 /* Small sanity checks — surfaced in the console, not to players. */
 (function selfCheck(){
