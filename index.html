@@ -158,8 +158,16 @@
 
   .turnrow{display:flex;gap:10px;align-items:flex-start}
   .turnmain{flex:1;min-width:0}
-  .rail{width:98px;flex:none;display:grid;gap:8px}
-  .opp{display:grid;gap:1px;padding:8px;border-radius:11px;border:1px solid var(--line);
+  /* Opponents run along the bottom of the boarding pass rather than down its
+     side. Beside it, every extra player made the card taller and pushed the
+     checklist under the End turn bar; in a row they cost nothing vertically.
+     Equal columns, so one opponent stretches and three share the width. */
+  .rail{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+    gap:8px;margin-top:12px}
+  /* Only the next player carries a badge, so bottom-align the stack — that way
+     the names and mileages line up across tiles instead of one sitting lower. */
+  .opp{display:grid;gap:1px;align-content:end;padding:8px;border-radius:11px;
+    border:1px solid var(--line);
     background:var(--surface2);cursor:pointer;text-align:left;width:100%}
   .opp:active{transform:scale(.98)}
   .opp .oh{display:flex;align-items:center;gap:6px;min-width:0}
@@ -296,9 +304,8 @@
   .nav button.on{color:var(--navy)}
   .nav .ni{font-size:19px;line-height:1}
 
-  /* On the narrowest phones the rail and the mileage figure fight for room. */
+  /* On the narrowest phones the mileage figure needs to give way. */
   @media (max-width:380px){
-    .rail{width:86px}
     .stat .n{font-size:36px}
     .logo .w1{font-size:21px}
   }
@@ -837,6 +844,136 @@ function autoEnd(what){
 }
 
 /* ==========================================================================
+   Recap
+
+   commit() files a full snapshot of every player before it changes anything, so
+   the log is already a frame-by-frame recording of the game. Everything below
+   reads those snapshots and diffs neighbouring frames — never `e.text`, which
+   is display copy and free to be reworded.
+   ========================================================================== */
+
+/* The log is newest-first, so the state *after* entry i is entry i-1's
+   snapshot — or the live game, for the newest entry. Returned oldest first,
+   which is the order anything narrating the game wants to walk. */
+function frames(){
+  // A spectator's log arrives with the snapshots stripped, so there is
+  // nothing to replay. Callers fall back to the final standings.
+  if(!G.log.length || !G.log[0].undo) return [];
+  const out = [];
+  for(let i = G.log.length - 1; i >= 0; i--){
+    const b = JSON.parse(G.log[i].undo);
+    const a = i === 0 ? {p:G.players, t:G.turn} : JSON.parse(G.log[i-1].undo);
+    out.push({e:G.log[i], before:b.p, after:a.p, turnBefore:b.t, turnAfter:a.t});
+  }
+  return out;
+}
+
+/* Who is winning, or null while it's genuinely level. Cities first — they are
+   the win condition — then miles as the tie-break, which is how the standings
+   on the win screen are already sorted. */
+function leaderOf(list){
+  if(!list.length) return null;
+  let best = list[0];
+  list.forEach(p => {
+    if(p.visited.length > best.visited.length ||
+      (p.visited.length === best.visited.length && p.miles > best.miles)) best = p;
+  });
+  const level = list.filter(p => p.visited.length === best.visited.length &&
+                                 p.miles === best.miles);
+  return level.length === 1 ? best.id : null;
+}
+
+/* Players are matched by id throughout, never by name: two people at the table
+   may enter the same name, and plenty of cards move somebody other than whoever
+   is having the turn. */
+function recapStats(){
+  const fs = frames();
+  const by = {};
+  G.players.forEach(p => by[p.id] = {
+    p, turns:0, earned:0, redeemed:0, cities:visitedCount(p),
+    flights:0, haul:null, bestTurn:0,
+  });
+
+  const g = {
+    full: fs.length > 0,
+    rows: G.players.map(p => by[p.id]),
+    turns: 0, ms: 0, leadChanges: 0, turning: null, ledThroughout: false,
+    winner: G.winner ? byId(G.winner) : null,
+  };
+  if(!g.full) return g;
+
+  g.ms = G.log[0].t - G.log[G.log.length-1].t;
+
+  const running = {};                 // miles banked so far this turn
+  G.players.forEach(p => running[p.id] = 0);
+  const leads = [];                   // who led after each frame, null while level
+  const moved = [];                   // did this frame change anyone's position?
+  let lead = null;
+
+  fs.forEach(f => {
+    const post = {};
+    f.after.forEach(a => post[a.id] = a);
+    let material = false;
+
+    f.before.forEach(b => {
+      const a = post[b.id], s = by[b.id];
+      if(!a || !s) return;                       // player from an older save
+      const dm = a.miles - b.miles;
+      if(dm !== 0 || a.visited.length !== b.visited.length) material = true;
+      if(dm > 0) s.earned += dm; else if(dm < 0) s.redeemed -= dm;
+      running[b.id] += dm;
+      /* A flight is a move that ticked a city off — which is the definition
+         that survives redemptions, card moves and manual corrections alike. */
+      if(a.at !== b.at && a.visited.length > b.visited.length){
+        s.flights++;
+        if(dm > 0 && (!s.haul || dm > s.haul.miles))
+          s.haul = {miles:dm, from:b.at, to:a.at};
+      }
+    });
+
+    // The seat moving on is what ends a turn; bank what the outgoing player made.
+    if(f.turnBefore !== f.turnAfter){
+      const out = f.before[f.turnBefore];
+      const s = out && by[out.id];
+      if(s){
+        s.turns++;
+        s.bestTurn = Math.max(s.bestTurn, running[out.id]);
+        running[out.id] = 0;
+      }
+      g.turns++;
+    }
+
+    const now = leaderOf(f.after);
+    if(lead && now && now !== lead) g.leadChanges++;
+    lead = now;
+    leads.push(now);
+    moved.push(material);
+  });
+
+  /* The turning point is the last time somebody else was definitively ahead.
+     Finding it takes two steps, because the frame where the lead settles is
+     usually not the frame that settled it: a game sits level for a while
+     (leaderOf returns null through the tie) and the lead only reads as the
+     winner's again a few entries later, often on an End of turn. So find where
+     the lead comes back for good, then walk back to the last entry that
+     actually changed the board — the move deserves the credit, not the
+     bookkeeping that followed it. */
+  const champ = (g.winner && g.winner.id) || leaderOf(G.players);
+  if(champ){
+    let last = -1;
+    leads.forEach((id, i) => { if(id && id !== champ) last = i; });
+    if(last < 0){ g.ledThroughout = true; return g; }
+    let i = last + 1;
+    while(i < fs.length && leads[i] !== champ) i++;
+    if(i < fs.length){
+      while(i > 0 && !moved[i]) i--;
+      g.turning = fs[i];
+    }
+  }
+  return g;
+}
+
+/* ==========================================================================
    Live sharing
 
    One phone runs the game and pushes after every action; everyone else opens a
@@ -1278,14 +1415,20 @@ function screenTurn(){
     '<div class="xtiny muted center" style="margin-bottom:12px">'+visitedCount(p)+' of '+G.target+' '+stopWord()+' visited' +
     (visitedCount(p)>=G.target ? ' — fly home to '+esc(cityName(p.home))+' to win!' : '') + '</div>';
 
-  h += '</div>' + oppRail() + '</div>';   // close .turnmain, add rail, close .turnrow
+  h += '</div></div>';   // close .turnmain, close .turnrow
 
   h += '<div class="perf"></div>' + cityChips(p) + '</div>';
 
   if(p.mult > 1) h += '<div class="banner warn">⚡ '+p.mult+'× mileage is armed — it applies to your next completed flight.</div>';
   if(G.bounties.length) h += G.bounties.map(b=>'<div class="banner">🎯 '+fmt(b.amount)+' miles waiting in '+esc(cityName(b.city))+' for the next player to land there.</div>').join('');
 
-  if(VIEW) return h;   // a spectator gets the state, not the controls
+  /* Opponents come last on the screen, not down the side of the boarding pass.
+     Beside it they made the card taller with every extra player until the
+     checklist slid under the End turn bar; between the checklist and the
+     actions they pushed the actions off instead. Below everything, the two
+     things you touch on your turn stay put whether there are two of you or
+     four — and there is a whole Scores tab for studying rivals. */
+  if(VIEW) return h + oppRail();   // a spectator gets the state, not the controls
 
   h += '<div class="actions">' +
     act('deck','🃏','Card','Log a card you just drew') +
@@ -1298,7 +1441,7 @@ function screenTurn(){
     '<button class="btn ghost" data-act="sub" data-v="cities" style="text-align:center">Edit cities</button>' +
     '<button class="btn ghost" data-act="sub" data-v="adjust" style="text-align:center">Adjust miles</button></div>';
 
-  return h;   // End turn lives in the dock, not here
+  return h + oppRail();   // End turn lives in the dock, not here
 }
 
 /* What just happened, and whether it took the turn with it.
@@ -1333,6 +1476,8 @@ function screenWin(){
   h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Final standings</h3>' +
     G.players.slice().sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)
       .map((p,i)=>playerRow(p, G.players.indexOf(p), p.id===G.winner)).join('') + '</div>';
+  h += '<button class="btn" data-act="recap">See the recap' +
+    '<span class="sub">How the game was won</span></button>';
   h += '<button class="btn primary big" data-act="newconfirm">Start a new game</button>';
   h += '<button class="btn ghost" data-act="unwin">Keep playing (undo win)</button>';
   return h;
@@ -1590,6 +1735,9 @@ function screenScores(){
 
 function screenHistory(){
   let h = header('History', undefined);
+  // Works mid-game too, so it reads as "how is this going" and not only "who won".
+  if(G.log.length) h += '<button class="btn" data-act="recap">Game recap' +
+    '<span class="sub">Standings, turning point and who is flying furthest</span></button>';
   h += '<div class="card">' + (G.log.length
     ? G.log.slice(0,60).map(e=>'<div class="log"><div class="lw">'+esc(e.who)+' — '+esc(e.text)+'</div>' +
         (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('')
@@ -1639,6 +1787,128 @@ function screenPlayer(){
   if(mine.length) h += '<div class="card"><h3 class="sechd">Recent</h3>' +
     mine.map(e=>'<div class="log"><div class="lw">'+esc(e.text)+'</div>' +
       (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('') + '</div>';
+
+  return h;
+}
+
+/* ---------------------------- the recap ----------------------------
+   Reads recapStats(), which reconstructs the game from the snapshots the log
+   already carries. Works mid-game as well as at the end, so the copy never
+   assumes anybody has actually won. */
+
+/* "42 minutes" — a game runs an evening at most, so hours are the ceiling. */
+function spanText(ms){
+  const m = Math.round(ms/60000);
+  if(m < 1)  return 'under a minute';
+  if(m < 60) return m + ' minute' + (m>1?'s':'');
+  const h = Math.floor(m/60), r = m%60;
+  return h + 'h' + (r ? ' ' + r + 'm' : '');
+}
+
+/* label / who / value — the same three-column row the city lists use. */
+function recapRow(label, who, value){
+  return '<div class="row"><span><span class="n">'+esc(label)+'</span>' +
+    '<span class="d">'+esc(who)+'</span></span>' +
+    '<span class="r">'+esc(value)+'</span></div>';
+}
+
+function screenRecap(){
+  const s = recapStats();
+  let h = header('Recap', 1);
+
+  const champ = s.winner || G.players.slice()
+    .sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)[0];
+
+  h += '<div class="card"><div class="center">' +
+    '<div style="font-size:32px;line-height:1">'+(s.winner?'🏆':'📊')+'</div>' +
+    '<h3 style="font-size:19px;margin-top:8px">' +
+      esc(champ.name) + (s.winner ? ' wins' : ' leads') + '</h3>';
+
+  if(s.full){
+    const bits = [s.turns + ' turn' + (s.turns===1?'':'s')];
+    if(s.ms > 30000) bits.push(spanText(s.ms));
+    bits.push(s.leadChanges ? s.leadChanges + ' lead change' + (s.leadChanges===1?'':'s')
+                            : 'never headed');
+    h += '<p class="tiny muted" style="margin-top:6px">'+esc(bits.join(' · '))+'</p>';
+  }
+  h += '</div></div>';
+
+  /* Without snapshots there is no game to narrate — only the standings, which
+     is exactly what a spectator's stripped log leaves behind. */
+  if(!s.full){
+    h += '<div class="card"><h3 class="sechd">Standings</h3>' +
+      G.players.slice().sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)
+        .map(p=>playerRow(p, G.players.indexOf(p), p.id===champ.id)).join('') +
+      '<p class="tiny muted" style="margin-top:10px">' +
+        (VIEW ? 'Turn-by-turn figures stay on the phone running the game.'
+              : 'Nothing has happened yet — the recap fills in as you play.') +
+      '</p></div>';
+    return h;
+  }
+
+  if(s.turning){
+    /* The leader and the player who acted are often different people — a
+       redemption can hand the lead to somebody else — so name the leader in
+       the claim and credit the action separately. */
+    const t = s.turning.e;
+    h += '<div class="card"><h3 class="sechd">Where it turned</h3>' +
+      '<p style="font-size:15px"><b>'+esc(champ.name)+'</b> took the lead for good.</p>' +
+      '<p class="tiny muted" style="margin-top:4px">'+esc(t.who)+' — '+esc(t.text) +
+      (t.detail ? ' · ' + esc(t.detail) : '') + '</p></div>';
+  } else if(s.ledThroughout){
+    h += '<div class="card"><h3 class="sechd">Where it turned</h3>' +
+      '<p style="font-size:15px">It never did — <b>'+esc(champ.name)+'</b> was in front ' +
+      'from the first turn.</p></div>';
+  }
+
+  /* One superlative per line, and only when a single player actually holds it —
+     "most flights" when everyone flew four times would just be naming whoever
+     happens to sit first. Ties are dropped rather than broken arbitrarily. */
+  const best = (pick, test) => {
+    const live = s.rows.filter(test);
+    if(!live.length) return null;
+    const top = Math.max.apply(null, live.map(pick));
+    const held = live.filter(r => pick(r) === top);
+    return held.length === 1 ? held[0] : null;
+  };
+  const notes = [];
+
+  const haul = best(r => r.haul.miles, r => !!r.haul);
+  if(haul) notes.push(recapRow('Biggest haul',
+    haul.p.name + ' · ' + cityName(haul.haul.from) + ' → ' + cityName(haul.haul.to),
+    fmt(haul.haul.miles) + ' mi'));
+
+  const most = best(r=>r.cities, r=>r.cities > 0);
+  if(most) notes.push(recapRow('Most cities', most.p.name,
+    most.cities + '/' + G.target));
+
+  const turn = best(r=>r.bestTurn, r=>r.bestTurn > 0);
+  if(turn) notes.push(recapRow('Best single turn', turn.p.name,
+    fmt(turn.bestTurn) + ' mi'));
+
+  const spent = best(r=>r.redeemed, r=>r.redeemed > 0);
+  if(spent) notes.push(recapRow('Most redeemed', spent.p.name,
+    fmt(spent.redeemed) + ' mi'));
+
+  const busy = best(r=>r.flights, r=>r.flights > 0);
+  if(busy) notes.push(recapRow('Most flights', busy.p.name,
+    busy.flights + ''));
+
+  if(notes.length) h += '<div class="card"><h3 class="sechd">Notable</h3>' +
+    '<div class="list">' + notes.join('') + '</div></div>';
+
+  h += '<div class="card"><h3 class="sechd">Every flyer</h3>' +
+    s.rows.slice().sort((a,b)=>b.cities-a.cities||b.p.miles-a.p.miles).map(r=>{
+      const per = r.turns ? (r.cities/r.turns).toFixed(1) : '—';
+      return playerRow(r.p, G.players.indexOf(r.p), r.p.id===champ.id) +
+        '<div class="list" style="margin:0 0 14px">' +
+          recapRow('Turns taken', '', r.turns + '') +
+          recapRow('Miles earned', '', fmt(r.earned)) +
+          (r.redeemed ? recapRow('Miles redeemed', '', fmt(r.redeemed)) : '') +
+          recapRow('Flights', '', r.flights + '') +
+          recapRow('Cities per turn', '', per) +
+        '</div>';
+    }).join('') + '</div>';
 
   return h;
 }
@@ -1734,6 +2004,7 @@ function render(){
   else if(UI.screen === 'scores') h = screenScores() + dock(false);
   else if(UI.screen === 'history')h = screenHistory() + dock(false);
   else if(UI.screen === 'player') h = screenPlayer() + dock(false);
+  else if(UI.screen === 'recap')  h = screenRecap() + dock(false);
   else {
     const map = {deck:subDeck, cards:subCards, card:subCard, flight:subFlight, redeem:subRedeem,
                  auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust, citypick:subCityPick};
@@ -1757,7 +2028,7 @@ function render(){
    Events
    ========================================================================== */
 
-const VIEW_ACTS = ['nav','player','back','leaveview','retryview'];
+const VIEW_ACTS = ['nav','player','recap','back','leaveview','retryview'];
 
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
@@ -1833,6 +2104,12 @@ app.addEventListener('click', e => {
       UI.tmp = {pid:v, pfrom:UI.screen};
       UI.screen = 'player'; UI.sub = null; render(); break;
 
+    /* Opened from the win screen or from History, so it remembers which —
+       same reason the player screen does. */
+    case 'recap':
+      UI.tmp = {rfrom:UI.screen};
+      UI.screen = 'recap'; UI.sub = null; render(); break;
+
     /* --- sharing --- */
     case 'sharestart': startShare(); break;
     case 'sharestop':  stopShare(); render(); break;
@@ -1888,6 +2165,7 @@ app.addEventListener('click', e => {
       }
       // Back to whichever screen the player was tapped on — rail or scoreboard.
       else if(UI.screen === 'player'){ UI.screen = UI.tmp.pfrom || 'scores'; UI.tmp = {}; }
+      else if(UI.screen === 'recap'){ UI.screen = UI.tmp.rfrom || 'history'; UI.tmp = {}; }
       else if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
       else if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
       else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
