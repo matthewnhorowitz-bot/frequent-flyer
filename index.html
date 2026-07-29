@@ -1884,9 +1884,12 @@ function screenPlayer(){
   if(i === G.turn && G.status === 'playing') flags.push(ico('die')+' Playing now');
   if(p.firstClass) flags.push(ico('sparkle')+' Flying first class');
   if(p.mult > 1)   flags.push(ico('bolt')+' '+p.mult+'× mileage armed');
-  if(p.skip)       flags.push('⏸ Misses '+p.skip+' turn'+(p.skip>1?'s':''));
+  if(p.skip)       flags.push(ico('warn')+' Misses '+p.skip+' turn'+(p.skip>1?'s':''));
   if(p.hand.length)flags.push(ico('ticket')+' Holding '+p.hand.length+' card'+(p.hand.length>1?'s':''));
-  if(flags.length) h += '<div class="banner">'+flags.map(esc).join(' · ')+'</div>';
+  /* Already markup — each flag is an icon plus a literal string, and the only
+     interpolations are engine numbers. Escaping here would print the icon SVG
+     as visible source, which is exactly what it used to do. */
+  if(flags.length) h += '<div class="banner">'+flags.join(' · ')+'</div>';
 
   h += '<div class="card"><h3 class="sechd">Checked off — '+visitedCount(p)+' of '+G.target+'</h3>' +
     cityChips(p) + '</div>';
