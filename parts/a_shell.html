@@ -1,0 +1,645 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Frequent Flyer">
+<title>Frequent Flyer — Scorekeeper</title>
+<style>
+  /* ---------- palette ----------
+     Sampled off the printed components in reference/, so the app and the box
+     agree: deep navy ground, sky blue and gold accents, and the coach/first
+     greens and purples taken straight from the two card faces.
+
+     Two golds, because one can't do both jobs: --gold is the box's #f4d14d and
+     belongs on navy, where it sings; on white it all but disappears, so
+     anything that has to stay legible on a light surface uses --goldInk. In
+     dark mode the two collapse to the same value.
+
+     --navy is the interactive colour, not literally navy: in dark mode it
+     becomes the sky blue, since #1e2f55 is invisible against a dark ground.
+     --onNavy is whatever text sits on top of it, and has to flip with it.
+
+     --done is the checklist green, and it is the one colour in the app that
+     means finished — a city crossed off, a progress bar full, a flight that
+     banked its miles. Three tokens because a completed chip needs a ground
+     (--doneFill), an edge (--doneEdge) and ink (--done) that all hold together
+     against both page colours; --good stays the transient "that worked" green
+     for banners and deltas.
+
+     The board's orange is no longer a state. It survives as --board on the
+     third player's pawn, where it is decoration and can't be mistaken for
+     progress. */
+  :root{
+    --bg:#eef2f9; --surface:#fff; --surface2:#e7edf7; --line:#dae2ee;
+    --ink:#131f38; --ink2:#51617c; --ink3:#8492a9;
+    --navy:#1e2f55; --navy2:#31508a; --onNavy:#fff;
+    --sky:#2b7ea6; --gold:#f4d14d; --goldInk:#8a6710; --onGold:#15233f;
+    --done:#0c7551; --doneFill:#dcf1e8; --doneEdge:#9ed7bf;
+    --board:#b0621a;
+    --onCoach:#05251f; --onFirst:#fff;
+    --brand1:#16264a; --brand2:#2f4d84;
+    --coach:#009f83; --first:#78489a;
+    --good:#12805c; --bad:#c0392b; --onGood:#fff;
+    --shadow:0 1px 2px rgba(16,32,56,.06),0 6px 18px -6px rgba(16,32,56,.13);
+    --shadowUp:0 -6px 22px -8px rgba(16,32,56,.20);
+    --ring:0 0 0 2px color-mix(in srgb,var(--navy) 55%,transparent);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0a1220; --surface:#141f37; --surface2:#1c2a46; --line:#2a3855;
+      --ink:#e9eff8; --ink2:#a3b2c8; --ink3:#7183a0;
+      --navy:#88c6e2; --navy2:#31508a; --onNavy:#0a1220;
+      --sky:#88c6e2; --gold:#f4d14d; --goldInk:#f4d14d; --onGold:#15233f;
+      --done:#4fd6a6; --doneFill:#10352b; --doneEdge:#256b56;
+      --board:#e8a05a;
+      --onCoach:#05251f; --onFirst:#1a1030;
+      --brand1:#122040; --brand2:#27406e;
+      --coach:#26c4a6; --first:#b58ad6;
+      --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
+      --shadow:0 1px 2px rgba(0,0,0,.44),0 6px 18px -6px rgba(0,0,0,.5);
+      --shadowUp:0 -6px 22px -8px rgba(0,0,0,.55);
+      --ring:0 0 0 2px color-mix(in srgb,var(--navy) 55%,transparent);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef2f9; --surface:#fff; --surface2:#e7edf7; --line:#dae2ee;
+    --ink:#131f38; --ink2:#51617c; --ink3:#8492a9;
+    --navy:#1e2f55; --navy2:#31508a; --onNavy:#fff;
+    --sky:#2b7ea6; --gold:#f4d14d; --goldInk:#8a6710; --onGold:#15233f;
+    --done:#0c7551; --doneFill:#dcf1e8; --doneEdge:#9ed7bf;
+    --board:#b0621a;
+    --onCoach:#05251f; --onFirst:#fff;
+    --brand1:#16264a; --brand2:#2f4d84;
+    --coach:#009f83; --first:#78489a;
+    --good:#12805c; --bad:#c0392b; --onGood:#fff;
+    --shadow:0 1px 2px rgba(16,32,56,.06),0 6px 18px -6px rgba(16,32,56,.13);
+    --shadowUp:0 -6px 22px -8px rgba(16,32,56,.20);
+    --ring:0 0 0 2px color-mix(in srgb,var(--navy) 55%,transparent);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a1220; --surface:#141f37; --surface2:#1c2a46; --line:#2a3855;
+    --ink:#e9eff8; --ink2:#a3b2c8; --ink3:#7183a0;
+    --navy:#88c6e2; --navy2:#31508a; --onNavy:#0a1220;
+    --sky:#88c6e2; --gold:#f4d14d; --goldInk:#f4d14d; --onGold:#15233f;
+    --done:#4fd6a6; --doneFill:#10352b; --doneEdge:#256b56;
+    --board:#e8a05a;
+    --onCoach:#05251f; --onFirst:#1a1030;
+    --brand1:#122040; --brand2:#27406e;
+    --coach:#26c4a6; --first:#b58ad6;
+    --good:#3ecf9e; --bad:#f0776a; --onGood:#0b1119;
+    --shadow:0 1px 2px rgba(0,0,0,.44),0 6px 18px -6px rgba(0,0,0,.5);
+    --shadowUp:0 -6px 22px -8px rgba(0,0,0,.55);
+    --ring:0 0 0 2px color-mix(in srgb,var(--navy) 55%,transparent);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%; overflow-x:hidden;}
+  #app{max-width:560px;margin:0 auto;padding:0 14px 96px;}
+
+  h1,h2,h3{margin:0;line-height:1.2}
+  button{font:inherit;color:inherit;font-family:inherit}
+  input,select{font:inherit;font-family:inherit}
+  /* Keyboard focus is visible everywhere; a pointer press is not ringed. */
+  :focus-visible{outline:2px solid var(--navy);outline-offset:2px;border-radius:4px}
+  :focus:not(:focus-visible){outline:none}
+
+  /* ---------- header ----------
+     Translucent rather than opaque, so content scrolling under it stays faintly
+     visible and the bar reads as a layer instead of a lid. The fallback colour
+     is the solid page, for anything without backdrop-filter. */
+  .top{position:sticky;top:0;z-index:20;background:var(--bg);
+    padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  @supports (backdrop-filter:blur(1px)){
+    /* 88%, not 70: the checklist scrolling underneath is green, and a thinner
+       ground lets it smear through the bar as colour. */
+    .top{background:color-mix(in srgb,var(--bg) 88%,transparent);
+      backdrop-filter:saturate(160%) blur(14px);
+      /* The bar is inset 14px by #app's padding; pull the blur out to the edges. */
+      margin-left:-14px;margin-right:-14px;padding-left:14px;padding-right:14px}
+  }
+  .top-row{display:flex;align-items:center;gap:10px}
+  .brand{font-weight:800;letter-spacing:.06em;font-size:13px;color:var(--navy);text-transform:uppercase}
+  .spacer{flex:1}
+  .top-row .mk{flex:none;margin-right:-2px}
+
+  /* ---------- brand ----------
+     The seal and wordmark are the game's own artwork (see b0_brand.html); all
+     this does is give them room and a ground to sit on. */
+  .mk{display:block;color:var(--navy)}
+  .logo{position:relative;z-index:1;display:grid;justify-items:center}
+  .logo .seal{display:block;color:#fff;filter:drop-shadow(0 2px 7px rgba(0,0,0,.34))}
+  .logo .wm{display:grid;justify-items:center;width:100%;margin-top:15px}
+  .logo .word{display:block;width:min(268px,84%);height:auto;color:#fff}
+  .logo .rule{height:2px;width:58px;border-radius:2px;background:var(--gold);margin:12px 0 8px}
+  .logo .w2{font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+    line-height:1;color:var(--gold)}
+
+  /* White-on-navy panel, so the wordmark needs its own ground in both themes.
+     The diagonals are the box art's contrails — two weights of line at the same
+     angle the printed ones run, kept far enough back to stay behind the mark. */
+  .hero{position:relative;overflow:hidden;border-radius:20px;padding:32px 20px 30px;
+    margin-bottom:20px;color:#fff;
+    background:linear-gradient(158deg,var(--brand1) 0%,var(--brand2) 100%)}
+  .hero::before{content:'';position:absolute;inset:-40% -20%;pointer-events:none;
+    background:repeating-linear-gradient(118deg,
+      transparent 0 27px,rgba(136,198,226,.14) 27px 28px,
+      transparent 28px 56px,rgba(244,209,77,.11) 56px 57px)}
+  .hero::after{content:'';position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(115% 78% at 50% 0,rgba(136,198,226,.20),transparent 62%)}
+
+  /* ---------- start screen ----------
+     One sentence of page-level copy under the mark. Not inside a card: a panel
+     containing nothing but a paragraph and a button is a box drawn around
+     nothing, and it costs the buttons their full width. */
+  .lede{font-size:14px;line-height:1.45;color:var(--ink2);text-align:center;margin:0 0 16px}
+
+  /* The saved game, offered as the thing it actually is — the scoreboard you
+     walked away from — rather than as a line of run-on text. The whole card is
+     the tap target, so it carries its own chevron; without one it reads as a
+     panel that happens to be clickable. */
+  .resume{position:relative;display:block;width:100%;text-align:left;cursor:pointer;
+    padding:14px 15px 11px;border-radius:16px;margin-bottom:12px;background:var(--surface);
+    border:1px solid color-mix(in srgb,var(--navy) 32%,var(--line));box-shadow:var(--shadow);
+    transition:transform .06s ease,border-color .15s ease}
+  .resume:active{transform:scale(.99)}
+  @media (hover:hover){ .resume:hover{border-color:var(--navy)} }
+  .resume .rh{display:flex;align-items:center;gap:8px;margin-bottom:8px;
+    font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--navy)}
+  .resume .rh::after{content:'›';margin-left:auto;font-size:20px;line-height:1;color:var(--ink3)}
+  /* A live dot: "in progress" is the entire claim the card is making. */
+  .resume .lv{width:7px;height:7px;flex:none;border-radius:99px;background:var(--done);
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--done) 22%,transparent)}
+  .resume .rr{display:flex;align-items:center;gap:9px;padding:4px 0}
+  .resume .rr .pawn{width:24px;height:24px;border-radius:7px;font-size:11px}
+  .resume .rr b{min-width:0;font-weight:600;font-size:14px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .resume .rr em{margin-left:auto;padding-left:10px;font-style:normal;font-weight:800;font-size:14px;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .resume .rr em span{margin-left:3px;font-weight:600;font-size:10px;
+    letter-spacing:.06em;color:var(--ink3)}
+
+  /* ---------- new-game flow ----------
+     Three screens — count, players, order — so each one says where it sits.
+     Filled bars behind you, hollow ahead. */
+  .steps{display:grid;gap:7px;margin:0 0 16px}
+  .steps .sb{display:flex;gap:5px}
+  .steps .sb i{flex:1;height:4px;border-radius:99px;background:var(--surface2);
+    box-shadow:inset 0 1px 2px rgba(16,32,56,.09);transition:background .25s ease}
+  .steps .sb i.on{background:var(--navy);box-shadow:none}
+  .steps .sl{font-size:11px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink3)}
+
+  /* Player count: three tiles rather than three stacked buttons. The answer is
+     a single digit, and the pawns above it say what that digit buys before the
+     word underneath does. */
+  /* One question with three answers leaves most of a phone screen empty, so the
+     block sits in the middle of what's left rather than piled at the top under
+     the step bar. The subtraction is the header, the step bar and a margin. */
+  .mid{display:grid;align-content:center;min-height:calc(100vh - 250px)}
+  @supports (height:100dvh){ .mid{min-height:calc(100dvh - 250px)} }
+  .pcount{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .pct{display:grid;justify-items:center;align-content:center;gap:3px;cursor:pointer;
+    aspect-ratio:1;border-radius:16px;border:1px solid var(--line);
+    background:var(--surface);box-shadow:var(--shadow);
+    transition:transform .06s ease,border-color .15s ease}
+  .pct:active{transform:scale(.97)}
+  @media (hover:hover){ .pct:hover{border-color:color-mix(in srgb,var(--navy) 45%,var(--line))} }
+  /* Overlapped, so four swatches are barely wider than two and every tile's
+     numeral stays on the same centre line. Each rides over the one before it,
+     which is what keeps the ring from reading as a gap. */
+  .pct .pw{display:flex;height:22px;margin-bottom:9px}
+  .pct .pw i{width:15px;height:22px;border-radius:6px;margin-right:-5px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 0 0 2px var(--surface)}
+  .pct .pw i:last-child{margin-right:0}
+  .pct .n{font-size:36px;font-weight:800;line-height:1;letter-spacing:-.035em;color:var(--navy2)}
+  .pct .l{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+
+  /* One card per player. The number badge is deliberately not a coloured pawn:
+     pawn colour is seat colour, and seats are not dealt until the next screen —
+     a colour here would change under the player between one screen and the
+     next. The card turns green when it has what it needs, which is the same
+     "done" the checklist uses. */
+  .pform .ph{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .pform .ph .num{width:30px;height:30px;flex:none;border-radius:9px;display:grid;place-items:center;
+    font-size:13px;font-weight:800;color:var(--navy);
+    background:color-mix(in srgb,var(--navy) 11%,var(--surface2));
+    border:1px solid color-mix(in srgb,var(--navy) 22%,transparent)}
+  .pform .ph b{font-size:15px}
+  .pform .ph .st{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--ink3)}
+  .pform.done{border-color:color-mix(in srgb,var(--done) 34%,var(--line))}
+  .pform.done .ph .st{color:var(--done)}
+  .pform.done .ph .num{color:var(--done);background:var(--doneFill);
+    border-color:color-mix(in srgb,var(--done) 30%,transparent)}
+
+  /* Section head with its own escape hatch on the right, so undoing a pick
+     costs a chip rather than a full-width button between two lists. */
+  .ordhd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .ordhd .sechd{margin-bottom:0}
+  .ordhd .btn{margin-bottom:0}
+
+  /* A pickable option with a sentence attached. A segmented control can only
+     carry a word, and the difference between the two game lengths is longer
+     than a word. */
+  .opt{display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+    padding:12px 13px;border-radius:12px;margin-bottom:8px;
+    border:1px solid var(--line);background:var(--surface);
+    transition:border-color .15s ease,background .15s ease}
+  .opt:last-child{margin-bottom:0}
+  .opt .rd{width:19px;height:19px;flex:none;border-radius:99px;display:grid;place-items:center;
+    border:2px solid var(--ink3);transition:border-color .15s ease}
+  .opt.on{border-color:var(--navy);background:color-mix(in srgb,var(--navy) 6%,var(--surface))}
+  .opt.on .rd{border-color:var(--navy)}
+  .opt.on .rd::after{content:'';width:9px;height:9px;border-radius:99px;background:var(--navy)}
+  .opt > span:last-child{min-width:0}
+  .opt .ot{display:block;font-weight:700;font-size:14px}
+  .opt .od{display:block;font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.35}
+
+  .stamp{display:inline-block;border:3px solid var(--goldInk);color:var(--goldInk);
+    border-radius:10px;padding:5px 14px;font-size:19px;font-weight:800;letter-spacing:.16em;
+    text-transform:uppercase;transform:rotate(-6deg)}
+
+  /* ---------- icons ----------
+     `.ic` is the drawn glyph itself; `.ico` further down is the tinted tile an
+     action row sits it inside. Sized in em so it tracks whatever it sits in. */
+  .ic{width:1em;height:1em;fill:currentColor;fill-rule:evenodd;display:inline-block;
+    vertical-align:-.14em;flex:none}
+
+  /* ---------- cards / surfaces ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
+  .card.tight{padding:12px}
+  .muted{color:var(--ink2)}
+  .tiny{font-size:13px}
+  .xtiny{font-size:12px}
+  .center{text-align:center}
+
+  /* ---------- buttons ---------- */
+  .btn{display:block;width:100%;padding:15px 16px;border-radius:13px;border:1px solid var(--line);
+    background:var(--surface);font-weight:600;cursor:pointer;text-align:left;
+    margin-bottom:10px;transition:transform .06s ease, background .15s ease, box-shadow .15s ease}
+  .btn:active{transform:scale(.985)}
+  /* A sheen laid over the fill rather than a two-colour gradient: --navy flips
+     from near-black to sky blue between themes, so any second colour would have
+     to flip with it. A white wash works on top of either. */
+  .btn.primary{background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,0) 60%),var(--navy);
+    border-color:var(--navy);color:var(--onNavy);text-align:center;
+    box-shadow:0 1px 2px rgba(16,32,56,.2),0 8px 18px -8px color-mix(in srgb,var(--navy) 65%,transparent)}
+  .btn.primary:active{box-shadow:0 1px 2px rgba(16,32,56,.2)}
+  .btn.big{padding:18px 16px;font-size:17px}
+  .btn.ghost{background:transparent}
+  .btn.danger{color:var(--bad);border-color:var(--bad)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn .sub{display:block;font-weight:400;font-size:13px;color:var(--ink2);margin-top:3px}
+  .btn.primary .sub{color:var(--onNavy);opacity:.82}
+  .btn-row{display:flex;gap:10px}
+  .btn-row .btn{margin-bottom:0}
+  .chipbtn{display:inline-block;width:auto;padding:9px 14px;border-radius:999px;font-size:14px;margin:0}
+
+  .actions{display:grid;gap:10px}
+  .act{display:flex;align-items:center;gap:13px;padding:15px 16px;border-radius:15px;
+    border:1px solid var(--line);background:var(--surface);cursor:pointer;text-align:left;width:100%;
+    box-shadow:var(--shadow);transition:transform .06s ease,border-color .15s ease}
+  .act:active{transform:scale(.985)}
+  @media (hover:hover){ .act:hover{border-color:color-mix(in srgb,var(--navy) 40%,var(--line))} }
+  /* A chevron on the right: every one of these opens another screen, and
+     without it the rows read as toggles. */
+  .act::after{content:'›';margin-left:auto;padding-left:8px;color:var(--ink3);
+    font-size:20px;font-weight:700;line-height:1}
+    /* The tile behind an action's glyph. font-size drives the `.ic` inside it,
+     which is sized in em. */
+  .act .ico{width:40px;height:40px;flex:none;border-radius:12px;display:grid;place-items:center;
+    font-size:20px;color:var(--navy);
+    background:color-mix(in srgb,var(--navy) 11%,var(--surface2))}
+  .act > span:last-child{display:block;min-width:0}
+  .act .ttl{display:block;font-weight:700}
+  .act .dsc{display:block;font-size:13px;color:var(--ink2);margin-top:2px}
+
+  /* ---------- forms ---------- */
+  /* Not label-only: a field whose control is the city picker is a <button>, and
+     a label wrapping a button swallows the button's own click. */
+  .fld{display:block;margin-bottom:14px}
+  .fld > span{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+  input[type=text],input[type=number],input[type=password],select{width:100%;padding:13px 14px;border-radius:11px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px}
+
+  /* A city field: looks like the inputs above it, but opens the search screen.
+     Twenty cities is more than a native dropdown wants to be on a phone. */
+  .pick{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+    padding:13px 14px;border-radius:11px;border:1px solid var(--line);background:var(--surface)}
+  .pick:active{background:var(--surface2)}
+  .pick .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .pick.empty .pn{color:var(--ink3);font-weight:400}
+  .pick .pc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;
+    letter-spacing:.08em;color:var(--navy);background:var(--surface2);padding:3px 7px;border-radius:6px}
+  .pick .pa{color:var(--ink3);font-weight:700}
+
+  /* ---------- route strip ----------
+     The one drawing in the app that is about the move itself: two airport codes
+     with a dotted leg and a plane between them. It sits at the head of the
+     mileage summary so the number underneath has something to be the length of.
+     The plane glyph points up, so it turns a quarter to fly east. */
+  /* The leg is the elastic column — the two codes are three characters wide and
+     have no reason to stretch, while the line between them should own whatever
+     the card has left. */
+  .route{display:grid;grid-template-columns:auto minmax(40px,1fr) auto;align-items:center;gap:10px;
+    padding-bottom:14px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+  /* A px cap, not a percentage: a percentage max-width on a grid item is
+     resolved against a track that is itself still being measured, and the
+     column collapses to a couple of characters. */
+  .route .rz{min-width:0;max-width:118px;text-align:center}
+  .route .rz b{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:20px;font-weight:700;letter-spacing:.07em}
+  .route .rz span{display:block;font-size:11px;color:var(--ink2);margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .route .rl{position:relative;height:20px;width:100%;min-width:54px}
+  .route .rl::before{content:'';position:absolute;top:50%;left:0;right:0;height:2px;
+    transform:translateY(-50%);border-radius:2px;
+    background:repeating-linear-gradient(90deg,
+      color-mix(in srgb,var(--ink3) 60%,transparent) 0 4px,transparent 4px 9px)}
+  .route .rp{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    padding:0 7px;line-height:0;color:var(--navy);font-size:19px;background:var(--surface)}
+  .route .rp .ic{transform:rotate(90deg)}
+
+  /* ---------- player strip ---------- */
+  .pcard{display:flex;align-items:center;gap:12px;padding:12px;border-radius:13px;
+    border:1px solid var(--line);background:var(--surface);margin-bottom:8px}
+  .pcard.active{border-color:var(--navy);box-shadow:var(--ring)}
+  /* Rim lighting rather than a wash across the face: a gradient over the fill
+     lightens exactly where the white letter sits, and these colours have no
+     contrast to spare. */
+  .pawn{width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;
+    font-weight:800;color:#fff;font-size:14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.18)}
+  /* Four pawn colours that stay apart from the app's two signal colours: no
+     green (that means a finished city) and no gold (that means a win). The
+     third is the board's own orange, which is how the printed orange survives
+     the checklist going green. Named, because the start screen paints small
+     swatches in them that are not pawns. They do not flip with the theme —
+     they stand for players, not for the surface they sit on. */
+  :root{--pw0:#b8392b;--pw1:#1f6fb8;--pw2:#a85f16;--pw3:#6f4396}
+  .p0{background-color:var(--pw0)}.p1{background-color:var(--pw1)}
+  .p2{background-color:var(--pw2)}.p3{background-color:var(--pw3)}
+  .pname{font-weight:700}
+  .pmeta{font-size:13px;color:var(--ink2)}
+  .pmiles{margin-left:auto;text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+  .pmiles small{display:block;font-weight:500;font-size:11px;color:var(--ink3);letter-spacing:.04em}
+
+  /* ---------- turn screen: the current player's boarding pass ---------- */
+  /* A gold hairline along the top edge and a faint wash behind the stub, so the
+     card reads as a printed ticket rather than another white panel. Both are
+     clipped by the card's own radius. */
+  .pass{position:relative;overflow:hidden;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 7%,var(--surface)),var(--surface) 120px)}
+  .pass::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--gold),color-mix(in srgb,var(--gold) 30%,transparent))}
+  .pass .stub{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:-4px 0 12px;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+  .pass .stub .sl{color:var(--goldInk)}
+  .pass .stub .sr{color:var(--ink3);display:flex;align-items:center}
+  .pass .stub .sr svg{display:block;height:auto}
+  /* Torn edge: the dashed line runs the full width of the card and a page-coloured
+     disc at each end eats 18px of the card border, so it reads as a punched notch. */
+  .perf{position:relative;height:0;border-top:1px dashed var(--line);margin:14px -16px}
+  .perf::before,.perf::after{content:'';position:absolute;top:-9px;width:18px;height:18px;
+    border-radius:50%;background:var(--bg)}
+  .perf::before{left:-9px}
+  .perf::after{right:-9px}
+
+  .turnrow{display:flex;gap:10px;align-items:flex-start}
+  .turnmain{flex:1;min-width:0}
+  /* Opponents run along the bottom of the boarding pass rather than down its
+     side. Beside it, every extra player made the card taller and pushed the
+     checklist under the End turn bar; in a row they cost nothing vertically.
+     Equal columns, so one opponent stretches and three share the width. */
+  .rail{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+    gap:8px;margin-top:12px}
+  /* Only the next player carries a badge, so bottom-align the stack — that way
+     the names and mileages line up across tiles instead of one sitting lower. */
+  .opp{display:grid;gap:1px;align-content:end;padding:8px;border-radius:11px;
+    border:1px solid var(--line);
+    background:var(--surface2);cursor:pointer;text-align:left;width:100%}
+  .opp:active{transform:scale(.98)}
+  .opp .oh{display:flex;align-items:center;gap:6px;min-width:0}
+  /* Beats the 34px .pcard pawn on specificity — keep it descendant-scoped. */
+  .opp .pawn{width:20px;height:20px;border-radius:6px;font-size:11px}
+  .opp .onm{font-weight:700;font-size:12px;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opp .om{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+  .opp .oc{font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums}
+  .opp .nx{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:800;color:var(--navy);margin-bottom:2px}
+
+  /* ---------- big stat ---------- */
+  .stat{text-align:center;padding:6px 0 2px}
+  .stat .n{font-size:46px;font-weight:800;letter-spacing:-.035em;font-variant-numeric:tabular-nums;
+    line-height:1;color:var(--navy2)}
+  /* --navy2 is a mid blue that only reads as emphasis against a light page; on
+     the dark ground the plain ink is the stronger of the two. */
+  :root[data-theme="dark"] .stat .n,:root[data-theme="dark"] .pct .n{color:var(--ink)}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .stat .n,
+    :root:not([data-theme="light"]) .pct .n{color:var(--ink)}
+  }
+  .stat .l{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);
+    margin-top:7px;font-weight:700}
+
+  /* ---------- city chips ----------
+     Twenty cities in a fixed grid rather than a wrapped row: the columns line
+     up, so the checklist reads as one block you can scan down, and a chip never
+     changes position between players. auto-fit lands on four columns at 320px
+     and five on a wide phone. */
+  .chips{display:grid;gap:6px;grid-template-columns:repeat(auto-fit,minmax(64px,1fr))}
+  .chip{position:relative;display:flex;align-items:baseline;justify-content:center;gap:4px;
+    font-size:12px;font-weight:700;padding:7px 6px;border-radius:9px;
+    border:1px solid var(--line);color:var(--ink3);background:var(--surface2);
+    transition:background .18s ease,border-color .18s ease,color .18s ease}
+  /* Done is the only loud state, and it is green — a filled ground, a green
+     edge and a tick, so a finished city reads as crossed off rather than as
+     merely highlighted. Half-done (the 40-city game's one-of-two) borrows the
+     same green at outline weight, which puts the two states on one scale
+     instead of two unrelated colours. */
+  .chip.v1{border-color:color-mix(in srgb,var(--done) 45%,var(--line));
+    color:var(--done);background:color-mix(in srgb,var(--doneFill) 45%,var(--surface))}
+  .chip.on{background:var(--doneFill);border-color:var(--doneEdge);color:var(--done)}
+  .chip.on::after{content:'✓';font-size:11px;font-weight:800;line-height:1}
+  /* Board number, so a chip can be matched against the board without counting. */
+  .chip .cn{font-weight:800;opacity:.45;font-variant-numeric:tabular-nums;font-size:11px}
+  .chip.on .cn{opacity:.6}
+  /* The visit counter in the 40-city game. A flex item can't be vertical-align:
+     super, so it is nudged instead. */
+  .chip i{font-style:normal;font-size:9px;opacity:.85;transform:translateY(-4px)}
+  /* The home marker rides in the corner rather than in the line of text — at
+     four to a row there is no width to spare for a fifth glyph. Left, because
+     the right corner is where the tick lands on a completed chip. */
+  .chip.home::before{content:'⌂';position:absolute;top:1px;left:4px;
+    font-size:10px;opacity:.8;font-weight:700;line-height:1}
+  .chip.here{box-shadow:0 0 0 2px var(--navy)}
+  .chip.here:not(.on){border-color:var(--navy);color:var(--navy);background:var(--surface)}
+
+  /* ---------- progress ---------- */
+  .bar{height:8px;border-radius:99px;background:var(--surface2);overflow:hidden;margin:12px 0 5px;
+    box-shadow:inset 0 1px 2px rgba(16,32,56,.09)}
+  /* The same green the chips use, so the bar and the checklist below it are
+     obviously reporting one thing. Two stops keeps it from reading as a flat
+     slab, and the fill is opaque enough to be visible at 1 of 20. */
+  .bar > i{display:block;height:100%;border-radius:99px;transition:width .45s cubic-bezier(.4,0,.2,1);
+    background:linear-gradient(90deg,var(--done),color-mix(in srgb,var(--done) 55%,var(--coach)))}
+  /* Every city visited — the last leg is the flight home, so mark it. */
+  .bar.full > i{background:linear-gradient(90deg,var(--done),var(--gold))}
+  .cnt{color:var(--done);font-weight:800;font-variant-numeric:tabular-nums}
+
+  /* ---------- list ---------- */
+  .list{max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .row{display:flex;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line);
+    cursor:pointer;width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
+  .row:last-child{border-bottom:0}
+  .row:active{background:var(--surface2)}
+  /* Every tappable row is a <button>; a plain div one is just a list item. */
+  div.row{cursor:default}
+  div.row:active{background:none}
+  .row > span:not(.deckdot):not(.code):not(.r){display:block;min-width:0}
+  .row .n{display:block;font-weight:700}
+  .row .d{display:block;font-size:13px;color:var(--ink2);margin-top:1px}
+  .row .r{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;color:var(--navy)}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;
+    color:var(--ink3);width:34px;flex:none}
+
+  /* ---------- game card display ----------
+     Drawn as the object on the table: a deck-coloured band across the head, the
+     rule text in the middle and the printed footer band at the foot, so the two
+     decks are told apart before the title is read. */
+  .gcard{position:relative;overflow:hidden;border-radius:16px;padding:18px;text-align:center;
+    border:1px solid var(--line);margin-bottom:12px;background:var(--surface);box-shadow:var(--shadow)}
+  .gcard.coach{border-color:color-mix(in srgb,var(--coach) 45%,var(--line))}
+  .gcard.first{border-color:color-mix(in srgb,var(--first) 45%,var(--line))}
+  .gcard .gd{margin:-18px -18px 16px;padding:8px;font-size:10px;font-weight:800;
+    letter-spacing:.18em;text-transform:uppercase}
+  .gcard.coach .gd{background:var(--coach);color:var(--onCoach)}
+  .gcard.first .gd{background:var(--first);color:var(--onFirst)}
+  .gcard .gt{font-size:23px;font-weight:800;margin-bottom:9px;font-style:italic}
+  .gcard.coach .gt{color:var(--coach)}
+  .gcard.first .gt{color:var(--first)}
+  .gcard .gx{font-size:15px;line-height:1.4}
+  /* The band is a solid fill of the deck's own colour, and the two decks need
+     opposite inks on top of it — the coach teal is light in both themes, the
+     first-class purple only goes light in dark mode. */
+  .gcard .gf{margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;padding:8px;border-radius:7px}
+  .gcard.coach .gf{background:var(--coach);color:var(--onCoach)}
+  .gcard.first .gf{background:var(--first);color:var(--onFirst)}
+  .deckdot{width:9px;height:9px;border-radius:99px;flex:none}
+  .deckdot.coach{background:var(--coach)}.deckdot.first{background:var(--first)}
+
+  /* ---------- misc ---------- */
+  .banner{padding:12px 14px;border-radius:11px;font-size:14px;margin-bottom:12px;
+    border:1px solid var(--line);background:var(--surface2)}
+  .banner.warn{border-color:var(--goldInk);color:var(--goldInk)}
+    /* The win is the one gold moment in the app, matching the Arrived stamp above
+     it. Navy ink on the gold rather than white — white on #f4d14d is unreadable. */
+  .banner.win{border-color:var(--gold);color:var(--onGold);
+    background:linear-gradient(140deg,#f9e08a,var(--gold) 45%,#e3b830);
+    box-shadow:0 6px 20px -8px color-mix(in srgb,var(--gold) 80%,transparent);
+    font-weight:800;text-align:center;font-size:17px}
+  /* The turn just ended itself. Says what happened, and offers the way back. */
+  .banner.flash-end{border-color:var(--good);display:grid;gap:9px}
+  .flash-end .fe-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .flash-end .fe-row span{flex:1;min-width:120px;color:var(--ink2)}
+  .flash-end .fe-row .btn{flex:none;border-color:var(--good);color:var(--good)}
+
+  /* ---------- sharing ---------- */
+  .sechd{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink3);margin-bottom:10px}
+  /* Four digits meant to be read aloud across a table, so they get to be big,
+     and spaced far enough apart to copy down one at a time. */
+  .codebig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;
+    font-size:46px;letter-spacing:.16em;text-indent:.16em;text-align:center;color:var(--navy);
+    background:var(--surface2);border-radius:11px;padding:16px 8px;margin-bottom:8px}
+  /* The password gets the same treatment one size down — it is read out across
+     the same table, but it is words rather than digits and wants to wrap. */
+  .passbig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;
+    font-size:24px;letter-spacing:.02em;text-align:center;color:var(--navy);
+    background:var(--surface2);border-radius:11px;padding:12px 8px;margin-bottom:8px;
+    overflow-wrap:anywhere}
+  .sync{font-size:13px;text-align:center;color:var(--ink2);margin-bottom:12px}
+  .sync.ok{color:var(--good);font-weight:600}
+  .sync.bad{color:var(--bad);text-align:left;line-height:1.4}
+  /* A whole scoreboard card is the tap target, so it must not look like a button. */
+  .rowcard{display:block;width:100%;text-align:left;cursor:pointer}
+  .rowcard:active{transform:scale(.99)}
+
+  /* Spectator bar. Sticky above the sticky header, which is why the header's
+     own offset moves down by exactly this bar's height in view mode. */
+  .viewbar{position:sticky;top:0;z-index:25;height:44px;display:flex;align-items:center;gap:10px;
+    background:var(--navy);color:var(--onNavy);margin:0 -14px;padding:0 14px}
+  #app.viewing .top{top:44px}
+  .viewbar .vbe{font-size:17px;line-height:0}
+  .viewbar .vbt{flex:1;min-width:0;line-height:1.15}
+  .viewbar .vbt b{display:block;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .viewbar .vbt span{display:block;font-size:11px;opacity:.75}
+  .viewbar .btn{border-color:color-mix(in srgb,var(--onNavy) 45%,transparent);color:var(--onNavy);background:transparent}
+  .delta{font-weight:800;font-variant-numeric:tabular-nums}
+  .delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+  .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .kv:last-child{border-bottom:0}
+  .kv b{font-variant-numeric:tabular-nums}
+  .hint{font-size:13px;color:var(--ink2);margin:-4px 0 12px}
+  .toggle{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);
+    border-radius:11px;margin-bottom:10px;cursor:pointer;background:var(--surface)}
+  .toggle input{width:20px;height:20px;flex:none;accent-color:var(--navy)}
+  .toggle > span:last-child{display:block;min-width:0}
+  .toggle .tl{display:block;font-size:14px;font-weight:600}
+  .toggle .td{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
+
+  /* ---------- bottom dock: End turn bar above the tab bar ----------
+     One fixed container so the two bars stack without either guessing the
+     other's height. #app's bottom padding is measured off it in render(). */
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
+    border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);
+    box-shadow:var(--shadowUp)}
+  @supports (backdrop-filter:blur(1px)){
+    .dock{background:color-mix(in srgb,var(--surface) 82%,transparent);
+      backdrop-filter:saturate(180%) blur(16px)}
+  }
+  .endbar{max-width:560px;margin:0 auto;padding:10px 14px 4px}
+  .endbar .btn{margin-bottom:0}
+  /* A flight has just been logged — draw the eye to the button that follows it.
+     A pulse rather than a static ring: the bar is at the very bottom of the
+     screen, where a colour change alone is easy to miss. */
+  .endbar.ready .btn{animation:readyPulse 1.9s ease-out 3}
+  @keyframes readyPulse{
+    0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--goldInk) 60%,transparent)}
+    45%{box-shadow:0 0 0 4px color-mix(in srgb,var(--goldInk) 55%,transparent)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .endbar.ready .btn{animation:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--goldInk) 55%,transparent)}
+    .bar > i{transition:none}
+  }
+
+  .nav{display:flex}
+  .nav button{position:relative;flex:1;padding:11px 4px 14px;border:0;background:none;cursor:pointer;
+    font-size:11px;font-weight:600;color:var(--ink3);display:grid;gap:3px;justify-items:center;
+    transition:color .15s ease}
+  .nav button.on{color:var(--navy)}
+  /* A short bar under the active tab — on a three-tab row the colour shift
+     alone is subtle, and the icons are all line art of a similar weight. */
+  .nav button.on::after{content:'';position:absolute;bottom:5px;width:18px;height:3px;
+    border-radius:2px;background:var(--navy)}
+  .nav .ni{font-size:20px;line-height:0}
+
+  /* On the narrowest phones the mileage figure needs to give way. */
+  @media (max-width:380px){
+    .stat .n{font-size:36px}
+    .logo .w1{font-size:21px}
+  }
+
+  .log{font-size:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .log:last-child{border-bottom:0}
+  .log .lw{font-weight:700}
+  .log .lt{color:var(--ink2);font-size:13px;margin-top:2px}
+</style>
+<div id="app"></div>

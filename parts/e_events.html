@@ -1,0 +1,349 @@
+<script>
+/* ==========================================================================
+   Events
+   ========================================================================== */
+
+const VIEW_ACTS = ['nav','player','recap','back','leaveview','retryview','viewunlock'];
+
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if(!el || el.disabled) return;
+  const a = el.dataset.act, v = el.dataset.v;
+
+  /* A spectator can navigate and nothing else. The read-only screens don't
+     render the controls in the first place; this is the belt to that's braces,
+     so a stale data-act can never mutate a watched game. */
+  if(VIEW && VIEW_ACTS.indexOf(a) < 0) return;
+
+  /* The post-action prompt is a one-shot: the next tap of anything dismisses it.
+     The cases that end a turn set it again below. */
+  UI.flash = null;
+
+  switch(a){
+    case 'new':
+      UI.screen='count'; UI.tmp={}; render(); break;
+
+    case 'newconfirm':
+      if(confirm('Start a new game? The current game will be erased.')){ wipe(); G=null; go('start'); }
+      break;
+
+    /* Same table, next game. Rather than a second setup path this fills in what
+       the wizard would have collected and drops in at its last step — play order
+       is a die roll, so it is the one thing that genuinely has to be asked
+       again. Backing out from there lands on the prefilled names-and-homes
+       screen, which is where you go to swap one city. */
+    case 'rematch': {
+      const data = G.players.map(p => ({name:p.name, home:p.home}));
+      UI.tmp = {count:data.length, data, target:G.target, order:[], share:G.share};
+      UI.screen = 'order'; UI.sub = null; render();
+      break;
+    }
+
+    case 'resume':
+      G = load(); go('turn'); break;
+
+    case 'count':
+      UI.tmp = {count:+v, target:20}; UI.screen='setup'; render(); break;
+
+    case 'target':
+      UI.tmp.target = +v; render(); break;
+
+    case 'begin': {
+      const homes = UI.tmp.data.map(p=>p.home);
+      if(new Set(homes).size !== homes.length){ alert('Each player needs a different home city.'); return; }
+      UI.screen = 'order'; UI.tmp.order = []; render();
+      break;
+    }
+
+    /* --- play order --- */
+    case 'pick': {
+      UI.tmp.order.push(+v);
+      // With one player left there is nothing to choose, so seat them.
+      if(UI.tmp.order.length === UI.tmp.data.length - 1){
+        UI.tmp.data.forEach((_,i)=>{ if(UI.tmp.order.indexOf(i) < 0) UI.tmp.order.push(i); });
+      }
+      render(); break;
+    }
+
+    /* Step back to the last real decision — never to a question with one answer,
+       which is what popping a single auto-seated player would leave. */
+    case 'unpick':
+      UI.tmp.order.pop();
+      if(UI.tmp.order.length === UI.tmp.data.length - 1) UI.tmp.order.pop();
+      render(); break;
+
+    case 'startgame': {
+      const players = UI.tmp.order.map(i=>{
+        const p = UI.tmp.data[i];
+        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home);
+      });
+      G = newGame(players, UI.tmp.target);
+      /* A rematch keeps the code and password the table is already watching, so
+         the first save() pushes the new game where the old one was. Without
+         this, newGame quietly orphans the share everyone has open. */
+      if(UI.tmp.share) G.share = UI.tmp.share;
+      save(); go('turn');
+      break;
+    }
+
+    case 'nav':   UI.screen = v; UI.sub = null; UI.tmp = {}; render(); break;
+    case 'sub':   sub(v); break;
+
+    /* Reachable from the opponent rail and from any scoreboard row, so it
+       remembers which one to go back to. */
+    case 'player':
+      UI.tmp = {pid:v, pfrom:UI.screen};
+      UI.screen = 'player'; UI.sub = null; render(); break;
+
+    /* Opened from the win screen or from History, so it remembers which —
+       same reason the player screen does. */
+    case 'recap':
+      UI.tmp = {rfrom:UI.screen};
+      UI.screen = 'recap'; UI.sub = null; render(); break;
+
+    /* --- sharing --- */
+    /* Four characters is not a security bar, it is a typo bar — the real floor
+       is that the password is the only way in, which the card says. */
+    case 'sharestart': {
+      const p = (UI.tmp.pass || '').trim();
+      if(p.length < 4){ alert('Give the game a password of at least four characters.'); return; }
+      startShare(p);
+      break;
+    }
+    case 'sharestop':  stopShare(); render(); break;
+
+    case 'viewunlock': unlockView(UI.tmp.pass); break;
+
+    case 'sharecopy': {
+      const url = gameUrl(G.share.code);
+      if(navigator.share)
+        navigator.share({title:'Frequent Flyer', text:'Follow the game — code '+G.share.code, url}).catch(()=>{});
+      else if(navigator.clipboard)
+        navigator.clipboard.writeText(url).then(()=>alert('Link copied.')).catch(()=>prompt('Copy this link:', url));
+      else prompt('Copy this link:', url);
+      break;
+    }
+
+    case 'watch': {
+      // Spaces stripped, because a code read out loud gets typed "42 06".
+      const c = (prompt('Enter the 4-digit game code') || '').replace(/\s/g,'');
+      if(SHARE_CODE.test(c)){ location.hash = c; location.reload(); }
+      else if(c) alert('That is not a game code. They are four digits, like 4206.');
+      break;
+    }
+
+    /* Drop the code from the URL, then reload — the boot path is the only thing
+       that decides between watching and playing, so let it decide again. */
+    case 'leaveview': location.replace(location.pathname + location.search); break;
+    case 'retryview': pullShare().then(ok => { if(ok) pollOn(); }); break;
+
+    /* --- city picker ---
+       Deliberately not sub(), which wipes UI.tmp and would lose the half-filled
+       form we have to return to. The scratch keys are underscored because
+       UI.tmp.from is already the flight's departure and UI.tmp.q the card search. */
+    case 'cityopen':
+      UI.tmp._field = v;
+      UI.tmp._back  = UI.sub;
+      UI.tmp._only  = el.dataset.only ? el.dataset.only.split(',') : null;
+      UI.tmp._q     = '';
+      UI.sub = 'citypick'; render(); break;
+
+    case 'citypicked': {
+      const field = UI.tmp._field, back = UI.tmp._back;
+      // The card screen keeps its answers in UI.tmp.ans; everything else in UI.tmp.
+      if(back === 'card'){ UI.tmp.ans = UI.tmp.ans || {}; UI.tmp.ans[field] = v; }
+      // The setup screen's homes live in UI.tmp.data, keyed the same way the
+      // text inputs are — home0, home1 … — not as flat UI.tmp keys.
+      else if(/^home(\d+)$/.test(field)) UI.tmp.data[+field.slice(4)].home = v;
+      else UI.tmp[field] = v;
+      delete UI.tmp._field; delete UI.tmp._back; delete UI.tmp._only; delete UI.tmp._q;
+      UI.sub = back; render(); break;
+    }
+    case 'back':
+      // Keep UI.tmp.data going back to setup, or the entered names are lost.
+      // Same reason as cityopen: the form we came from is still half-filled in UI.tmp.
+      if(UI.sub === 'citypick'){
+        UI.sub = UI.tmp._back;
+        delete UI.tmp._field; delete UI.tmp._back; delete UI.tmp._only; delete UI.tmp._q;
+      }
+      // Back to whichever screen the player was tapped on — rail or scoreboard.
+      else if(UI.screen === 'player'){ UI.screen = UI.tmp.pfrom || 'scores'; UI.tmp = {}; }
+      else if(UI.screen === 'recap'){ UI.screen = UI.tmp.rfrom || 'history'; UI.tmp = {}; }
+      else if(UI.screen === 'order'){ UI.screen='setup'; delete UI.tmp.order; }
+      else if(UI.screen === 'setup'){ UI.screen='count'; UI.tmp={}; }
+      else if(UI.screen === 'count'){ UI.screen='start'; UI.tmp={}; }
+      else if(UI.sub === 'cards'){ UI.sub='deck'; UI.tmp={}; }
+      else if(UI.sub === 'card'){ UI.sub = UI.tmp.fromHand ? 'hand' : 'cards'; UI.tmp={deck:UI.tmp.deck}; }
+      else if(UI.sub === 'auto'){ UI.sub='redeem'; UI.tmp={}; }
+      else { UI.sub = null; UI.tmp = {}; }
+      render(); break;
+
+    case 'undo':
+      undoLast(); UI.sub=null; UI.tmp={}; render(); break;
+
+    case 'unwin':
+      G.status='playing'; G.winner=null; save(); go('turn'); break;
+
+    /* --- cards --- */
+    case 'deckpick': UI.tmp = {deck:v}; UI.sub='cards'; render(); break;
+    case 'cardpick': UI.tmp = {deck:UI.tmp.deck, card:v, ans:{}}; UI.sub='card'; render(); break;
+    case 'playhand': UI.tmp = {card:v, fromHand:true, ans:{fromHand:true}}; UI.sub='card'; render(); break;
+    case 'branch':   UI.tmp.ans.branch = +v; render(); break;
+
+    case 'apply': {
+      const c = CARDS_BY_ID[UI.tmp.card];
+      const ans = UI.tmp.ans || {};
+      ans.fromHand = !!UI.tmp.fromHand;
+      /* Drawing a card is the end of a turn — except for a card that hands the
+         die straight back, and except for one played out of your hand, which
+         replaces your roll rather than following it. `flyIfNot` has to be read
+         before the card resolves, since landing there changes the answer. */
+      const fx = resolveFx(c, ans);
+      const again = !!fx.again || (!!fx.flyIfNot && hasVisited(cur(), fx.flyIfNot));
+      playCard(c, ans);
+      const said = c.title + ' — ' + G.log[0].detail;
+      if(ans.fromHand || again) UI.flash = {text:said, ended:false};
+      else autoEnd(said);
+      UI.sub = null; UI.tmp = {}; render();
+      break;
+    }
+
+    /* --- flight --- */
+    /* `p` stays valid across commit() — only undo's restore() reassigns G.players. */
+    case 'doflight': {
+      const p = cur(), to = UI.tmp.to, before = visitedCount(p);
+      completeFlight(UI.tmp.from, to, !UI.tmp.noMiles);
+      autoEnd(G.log[0].detail + (visitedCount(p) > before ? ' · '+to+' checked off' : ''));
+      UI.sub=null; UI.tmp={}; render(); break;
+    }
+
+    /* --- redeem --- */
+    case 'redeem':
+      if(v === 'auto'){ UI.sub='auto'; UI.tmp={}; render(); }
+      else { redeem(v); UI.sub=null; UI.tmp={}; render(); }
+      break;
+
+    case 'doauto': {
+      const p = cur(), city = UI.tmp.city, before = visitedCount(p);
+      redeem('auto', city);
+      autoEnd(G.log[0].detail + (visitedCount(p) > before ? ' · '+city+' checked off' : ''));
+      UI.sub=null; UI.tmp={}; render(); break;
+    }
+
+    /* --- misc --- */
+    case 'togglecity': toggleCity(v); render(); break;
+
+    case 'doadjust':
+      adjustMiles(parseInt(UI.tmp.amt,10), (UI.tmp.why||'').trim());
+      UI.sub=null; UI.tmp={}; render(); break;
+
+    case 'endturn':
+      endTurn(); UI.sub=null; UI.tmp={}; render(); break;
+  }
+});
+
+/* Inputs: keep UI.tmp in sync. Selects and checkboxes re-render (they can
+   change what the form shows); text inputs do not, so typing is not interrupted. */
+app.addEventListener('input', e => {
+  const el = e.target.closest('[data-in]');
+  if(!el) return;
+  const k = el.dataset.in;
+  const val = el.type === 'checkbox' ? el.checked : el.value;
+
+  if(/^name(\d+)$/.test(k)){ UI.tmp.data[+k.slice(4)].name = val; return; }
+
+  if(UI.sub === 'card'){
+    UI.tmp.ans = UI.tmp.ans || {};
+    UI.tmp.ans[k] = val;
+    if(k === 'oppId'){ delete UI.tmp.ans.oppCity; delete UI.tmp.ans.cardId; }
+    render(); return;
+  }
+
+  UI.tmp[k] = val;
+
+  // The adjust screen has a live preview. Patch it in place rather than
+  // re-rendering, so the number field keeps focus while you type.
+  if(UI.sub === 'adjust' && k === 'amt'){
+    const n = parseInt(val,10);
+    const btn = document.getElementById('adjBtn');
+    const prev = document.getElementById('adjPrev');
+    const bal = document.getElementById('adjBal');
+    if(btn) btn.disabled = !n;
+    if(prev) prev.style.display = n ? '' : 'none';
+    if(bal) bal.textContent = fmt(cur().miles + (n||0));
+    return;
+  }
+
+  if(el.tagName === 'SELECT' || el.type === 'checkbox') render();
+});
+
+/* City picker filters as you type. Patched in place, like the card search below,
+   so the keyboard does not drop between keystrokes. */
+app.addEventListener('input', e => {
+  if(e.target.dataset && e.target.dataset.in === '_q' && UI.sub === 'citypick'){
+    const box = app.querySelector('.list');
+    if(box) box.innerHTML = cityRows(cityMatches());
+  }
+});
+
+/* A lone password box with a button under it is a form in every way except the
+   tag, and a phone keyboard's Go key should do what it looks like it does. */
+app.addEventListener('keydown', e => {
+  if(e.key !== 'Enter' || !e.target.dataset || e.target.dataset.in !== 'pass') return;
+  e.preventDefault();
+  if(UI.screen === 'viewpass') return unlockView(UI.tmp.pass);
+  const start = app.querySelector('[data-act="sharestart"]');
+  if(start && !VIEW) start.click();
+});
+
+/* Search box filters as you type without losing focus. */
+app.addEventListener('input', e => {
+  if(e.target.dataset && e.target.dataset.in === 'q' && UI.sub === 'cards'){
+    UI.tmp.q = e.target.value;
+    const deck = UI.tmp.deck, q = UI.tmp.q.toLowerCase();
+    const list = CARDS.filter(c=>c.deck===deck && (!q || c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)));
+    const box = app.querySelector('.list');
+    if(box) box.innerHTML = list.map(c=>'<button class="row" data-act="cardpick" data-v="'+c.id+'">' +
+      '<span class="deckdot '+c.deck+'"></span>' +
+      '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span>' +
+      '</button>').join('') || '<div style="padding:18px" class="muted center">No cards match.</div>';
+  }
+});
+
+/* ==========================================================================
+   Boot
+   ========================================================================== */
+(function boot(){
+  /* A share link's whole payload is its hash — #4206 — so one pattern test
+     separates "watch this game" from an ordinary visit. */
+  const code = decodeURIComponent((location.hash||'').replace(/^#\/?/,'')).trim();
+  if(syncOn() && SHARE_CODE.test(code)) return bootView(code);
+
+  const saved = load();
+  if(saved && saved.status === 'playing'){ G = saved; UI.screen = 'start'; }
+  render();
+})();
+
+/* Opening a share link while the app is already on screen only changes the
+   hash, which is not a page load — so make it one. Also covers backing out of
+   a watched game with the browser's own Back button. */
+window.addEventListener('hashchange', () => location.reload());
+
+/* Small sanity checks — surfaced in the console, not to players. */
+(function selfCheck(){
+  const errs = [];
+  if(CARDS.filter(c=>c.deck==='coach').length !== 45) errs.push('coach deck is not 45 cards');
+  if(CARDS.filter(c=>c.deck==='first').length !== 25) errs.push('first class deck is not 25 cards');
+  if(CITIES.length !== 20) errs.push('city list is not 20 cities');
+  for(let i=0;i<20;i++){
+    if(MILEAGE[i][i] !== 0) errs.push('non-zero diagonal at '+CITIES[i].id);
+    for(let j=i+1;j<20;j++) if(MILEAGE[i][j] !== MILEAGE[j][i])
+      errs.push('asymmetric: '+CITIES[i].id+'/'+CITIES[j].id);
+  }
+  const ids = CARDS.map(c=>c.id);
+  if(new Set(ids).size !== ids.length) errs.push('duplicate card ids');
+  window.__ffCheck = errs;
+  console.log(errs.length ? '❌ Frequent Flyer data errors: '+errs.join('; ')
+                          : '✅ Frequent Flyer data OK — 20 cities, symmetric mileage, 45 coach + 25 first class cards.');
+})();
+</script>

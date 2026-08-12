@@ -1,0 +1,6 @@
+.DS_Store
+
+# The publisher's print-ready PDFs (© Frequent Games LLC) — 13MB of artwork git
+# can't delta-compress, and not ours to redistribute if this repo goes public.
+# They stay on disk; parts/b0_brand.html already carries what was lifted from them.
+reference/

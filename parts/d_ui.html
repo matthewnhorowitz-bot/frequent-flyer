@@ -1,0 +1,960 @@
+<script>
+/* ==========================================================================
+   Rendering
+   ========================================================================== */
+const app = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const go  = (screen, sub) => { UI.screen = screen; UI.sub = sub||null; UI.tmp = {}; render(); };
+const sub = s => { UI.sub = s; UI.tmp = {}; render(); };
+
+/* A city field opens the search screen instead of a native dropdown — twenty
+   cities is more than a phone dropdown wants to be. `only` restricts the list. */
+function cityField(name, value, only){
+  const c = value ? CITIES[CIDX[value]] : null;
+  return '<button class="pick'+(c?'':' empty')+'" data-act="cityopen" data-v="'+name+'"' +
+    (only ? ' data-only="'+only.join(',')+'"' : '') + '>' +
+    '<span class="pn">' + (c ? c.n+'. '+esc(c.name) : 'Select a city…') + '</span>' +
+    (c ? '<span class="pc">'+c.id+'</span>' : '') +
+    '<span class="pa">›</span></button>';
+}
+function oppSelect(name, value){
+  return '<select data-in="'+name+'"><option value="">Select a player…</option>' +
+    opponents(cur()).map(o=>'<option value="'+o.id+'"'+(value===o.id?' selected':'')+'>'+esc(o.name)+'</option>').join('') +
+    '</select>';
+}
+
+/* ---------- brand ---------- */
+/* Drawn inline rather than linked, so the app still works with no network.
+   The artwork itself lives in b0_brand.html — this is only the lockup. */
+function mark(size){
+  return brand('mono', size, 'mk');
+}
+/* Hero lockup: seal over wordmark. `size` is the seal's width; the wordmark
+   sizes itself off the panel so it stays put on a 320px phone. */
+function logo(size){
+  return '<div class="logo">' + brand('seal', size, 'seal') +
+    '<div class="wm">' + brand('word', 268, 'word') +
+    '<div class="rule"></div><div class="w2">Race Across the States</div></div></div>';
+}
+
+/* ---------- shared bits ---------- */
+/* Setting up a new game leaves the previous game loaded in G, so Undo has to be
+   gated on the screen too — otherwise it offers to undo a game you're replacing. */
+const PREGAME = ['start','count','setup','order'];
+
+/* The mark takes the Back button's slot rather than sitting beside it — on a
+   320px bar, back + mark + title + undo is one element too many. */
+function header(title, backTo){
+  const canUndo = !VIEW && G && G.status==='playing' && PREGAME.indexOf(UI.screen) < 0;
+  return '<div class="top"><div class="top-row">' +
+    (backTo!==undefined ? '<button class="btn chipbtn" data-act="back">‹ Back</button>' : mark(20)) +
+    '<div class="brand">'+esc(title)+'</div><div class="spacer"></div>' +
+    (canUndo ? '<button class="btn chipbtn ghost" data-act="undo" '+(G.log.length?'':'disabled')+'>Undo</button>' : '') +
+    '</div></div>';
+}
+
+/* Grey = not yet, pale green = one visit, green with a tick = done. In the
+   40-city game a city needs two visits, so the middle state is the one that
+   matters — hence one green at two strengths rather than two colours. */
+function cityChips(p){
+  const max = maxVisits();
+  return '<div class="chips">' + CITIES.map(c=>{
+    const n = visitCount(p, c.id);
+    const cls = ['chip'];
+    if(n >= max) cls.push('on'); else if(n > 0) cls.push('v1');
+    if(c.id===p.home) cls.push('home');
+    if(c.id===p.at) cls.push('here');
+    return '<span class="'+cls.join(' ')+'"><span class="cn">'+c.n+'</span>'+c.id +
+      (max>1&&n?'<i>'+n+'</i>':'')+'</span>';
+  }).join('') + '</div>';
+}
+
+/* Two airport codes and the leg between them — see .route in a_shell.html. */
+function routeStrip(from, to){
+  const z = id => '<span class="rz"><b>'+id+'</b><span>'+esc(cityName(id))+'</span></span>';
+  return '<div class="route">' + z(from) +
+    '<span class="rl"><span class="rp">'+ico('plane')+'</span></span>' + z(to) + '</div>';
+}
+
+function playerRow(p, i, active){
+  return '<div class="pcard'+(active?' active':'')+'">' +
+    '<div class="pawn p'+i+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+    '<div><div class="pname">'+esc(p.name)+'</div>' +
+    '<div class="pmeta">'+visitedCount(p)+'/'+G.target+' '+stopWord()+' · in '+esc(cityName(p.at)) +
+      (p.firstClass?' · <b>First class</b>':'') + (p.skip?' · skips '+p.skip:'') + '</div></div>' +
+    '<div class="pmiles">'+fmt(p.miles)+'<small>MILES</small></div></div>';
+}
+
+function navBar(){
+  const t = (id,ico,label)=> '<button data-act="nav" data-v="'+id+'" class="'+(UI.screen===id?'on':'')+'">' +
+    '<span class="ni">'+ico+'</span><span>'+label+'</span></button>';
+  return '<div class="nav">'+t('turn',ico('plane'),'Turn')+t('scores',ico('clipboard'),'Scores') +
+    t('history',ico('clock'),'History')+'</div>';
+}
+
+/* Ending a turn is the one thing you do every single turn, so it rides in a
+   fixed dock with the tab bar instead of at the bottom of a scrolling page. */
+function dock(withEndTurn){
+  let h = '<div class="dock">';
+  if(withEndTurn){
+    // Ring the button only when the turn is still open. Once it has auto-ended
+    // there is nothing left to prompt for — the banner carries the undo instead.
+    const ring = UI.flash && !UI.flash.ended;
+    h += '<div class="endbar'+(ring?' ready':'')+'">' +
+      '<button class="btn primary big" data-act="endturn">End turn → ' +
+      esc(G.players[(G.turn+1)%G.players.length].name) + '</button></div>';
+  }
+  return h + navBar() + '</div>';
+}
+
+/* ==========================================================================
+   Screens
+   ========================================================================== */
+
+function screenStart(){
+  const saved = load();
+  const going = saved && saved.status === 'playing';
+
+  let h = '<div style="height:22px"></div><div class="hero">' + logo(92) +
+    '<div class="center xtiny" style="margin-top:20px;opacity:.75;' +
+      'letter-spacing:.16em;text-transform:uppercase;font-weight:700">Scorekeeper</div></div>';
+
+  h += '<p class="lede">Keep playing with the board, cards and pawns. ' +
+    'This app tracks miles, cities and whose turn it is.</p>';
+
+  /* A game in progress goes above the new one and takes the primary weight:
+     if there is a game loaded, carrying on with it is why the app was opened. */
+  if(going){
+    h += '<button class="resume" data-act="resume">' +
+      '<span class="rh"><span class="lv"></span>Game in progress</span>' +
+      saved.players.map((p,i)=>
+        '<span class="rr"><span class="pawn p'+i+'">'+esc(p.name.slice(0,1).toUpperCase())+'</span>' +
+        '<b>'+esc(p.name)+'</b><em>'+fmt(p.miles)+'<span>MI</span></em></span>').join('') +
+      '</button>';
+  }
+
+  h += '<button class="btn '+(going?'':'primary ')+'big" data-act="new">Start a new game</button>';
+  // For everyone at the table who isn't keeping score.
+  if(syncOn()) h += '<button class="btn ghost" data-act="watch">Watch someone else\'s game' +
+    '<span class="sub">Type the four digits they read out</span></button>';
+  return h;
+}
+
+/* ---------------------------- new game ---------------------------- */
+
+/* Setting a game up is three screens, so each one says where it sits in the
+   three. Filled bars behind you, hollow ahead. */
+const STEPS = ['Players','Names & homes','Play order'];
+function steps(i){
+  return '<div class="steps"><div class="sb">' +
+    STEPS.map((_,k)=>'<i class="'+(k<=i?'on':'')+'"></i>').join('') +
+    '</div><div class="sl">Step '+(i+1)+' of '+STEPS.length+' · '+STEPS[i]+'</div></div>';
+}
+
+function screenCount(){
+  let h = header('New game', 1) + steps(0);
+  h += '<div class="mid"><h3 style="margin-bottom:7px">How many players?</h3>' +
+    '<p class="hint">Frequent Flyer is for two to four.</p>';
+  h += '<div class="pcount">' + [2,3,4].map(n=>
+    '<button class="pct" data-act="count" data-v="'+n+'">' +
+    '<span class="pw">' + Array.from({length:n},(_,i)=>'<i class="p'+i+'"></i>').join('') + '</span>' +
+    '<span class="n">'+n+'</span><span class="l">players</span></button>').join('') + '</div>';
+  h += '<p class="xtiny muted center">Names and home cities come next.</p></div>';
+  return h;
+}
+
+const LENGTHS = [
+  [20,'Standard game','All 20 cities, once each.'],
+  [40,'Long game','Every city twice, in any order.']
+];
+
+function screenSetup(){
+  const n = UI.tmp.count;
+  const d = UI.tmp.data || (UI.tmp.data = Array.from({length:n},()=>({name:'',home:''})));
+  const target = UI.tmp.target || (UI.tmp.target = 20);
+
+  let h = header('New game', 1) + steps(1);
+  h += '<h3 style="margin-bottom:7px">Who’s playing?</h3>' +
+    '<p class="hint">Names are optional. No two players may share a home city.</p>';
+
+  d.forEach((p,i)=>{
+    // Homes already spoken for simply aren't in the picker — a disabled row you
+    // can still see and tap is a worse answer than one that isn't offered.
+    const taken = d.filter((_,j)=>j!==i).map(x=>x.home).filter(Boolean);
+    const free = CITIES.map(c=>c.id).filter(id => taken.indexOf(id) < 0);
+    h += '<div class="card pform'+(p.home?' done':'')+'">' +
+      '<div class="ph"><span class="num">'+(i+1)+'</span><b>Player '+(i+1)+'</b>' +
+      // Only the finished state is called out. The empty picker below already
+      // says what is missing, and three cards all shouting it is nagging.
+      '<span class="st">'+(p.home?'Ready':'')+'</span></div>' +
+      '<label class="fld"><span>Name</span><input type="text" data-in="name'+i+'" value="'+esc(p.name)+'" placeholder="Player '+(i+1)+'" autocomplete="off"></label>' +
+      '<div class="fld" style="margin-bottom:0"><span>Home city</span>' +
+      cityField('home'+i, p.home, free) + '</div></div>';
+  });
+
+  h += '<div class="card"><h3 style="font-size:16px">Game length</h3>' +
+    '<p class="hint" style="margin:6px 0 12px">Reach this many stops, then fly home to win. ' +
+    'Your home city counts as your first.</p>' +
+    LENGTHS.map(o => '<button class="opt'+(target===o[0]?' on':'')+'" data-act="target" data-v="'+o[0]+'">' +
+      '<span class="rd"></span><span><span class="ot">'+o[0]+' cities · '+o[1]+'</span>' +
+      '<span class="od">'+o[2]+'</span></span></button>').join('') + '</div>';
+
+  const ready = d.every(p=>p.home) ;
+  h += '<button class="btn primary big" data-act="begin" '+(ready?'':'disabled')+'>' +
+    (ready?'Next: play order':'Pick a home city for each player')+'</button>';
+  return h;
+}
+
+/* ---------------------------- play order ---------------------------- */
+
+const ORDINALS = ['1st','2nd','3rd','4th'];
+/* Blank names become "Player N" at construction, so show that here too rather
+   than an empty row. */
+const setupName = (p,i) => p.name.trim() || ('Player '+(i+1));
+
+function screenOrder(){
+  const d = UI.tmp.data;
+  const order = UI.tmp.order || (UI.tmp.order = []);
+  const done = order.length === d.length;
+
+  let h = header('New game', 1) + steps(2);
+  h += '<p class="hint">Roll the 20-sided die — highest roll goes first.</p>';
+
+  // Seated players sit on the page, like the list of unseated ones below them —
+  // a .pcard already draws its own frame, so a card around them is a second.
+  if(order.length){
+    h += '<div class="ordhd"><span class="sechd">' + (done ? 'Play order' : 'So far') +
+      '</span><button class="btn chipbtn ghost" data-act="unpick">' +
+      (done ? 'Change' : 'Undo') + '</button></div>';
+    h += order.map((di,pos)=>
+      '<div class="pcard"><div class="pawn p'+pos+'">'+(pos+1)+'</div>' +
+      '<div><div class="pname">'+esc(setupName(d[di],di))+'</div>' +
+      '<div class="pmeta">'+ORDINALS[pos]+' to play · home '+esc(cityName(d[di].home))+'</div></div></div>'
+    ).join('');
+  }
+
+  if(done){
+    h += '<button class="btn primary big" data-act="startgame" style="margin-top:16px">Start game</button>';
+    return h;
+  }
+
+  // The list draws its own frame, so it sits on the page rather than inside a
+  // card — nested inside one it would be a border drawn twice.
+  h += '<h3 style="font-size:17px;margin:'+(order.length?'22px':'0')+' 0 7px">Who goes ' +
+    ORDINALS[order.length] + '?</h3>' +
+    '<p class="hint">Tap a player.</p><div class="list">';
+  h += d.map((p,i)=> order.indexOf(i) >= 0 ? '' :
+    '<button class="row" data-act="pick" data-v="'+i+'">' +
+    '<span><span class="n">'+esc(setupName(p,i))+'</span>' +
+    '<span class="d">Home: '+esc(cityName(p.home))+'</span></span>' +
+    '<span class="r">›</span></button>').join('');
+  h += '</div>';
+  return h;
+}
+
+/* ---------------------------- turn screen ---------------------------- */
+
+/* Opponents down the right of the turn screen, next-to-play first — that is the
+   one you weigh a move against. Tapping a tile opens that player's checklist. */
+function oppRail(){
+  const n = G.players.length;
+  const rest = [];
+  for(let k = 1; k < n; k++) rest.push(G.players[(G.turn + k) % n]);
+
+  return '<div class="rail">' + rest.map((p,k)=>
+    '<button class="opp" data-act="player" data-v="'+p.id+'">' +
+    (k===0 ? '<div class="nx">Next</div>' : '') +
+    '<div class="oh"><div class="pawn p'+G.players.indexOf(p)+'">' +
+      esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+      '<div class="onm">'+esc(p.name)+'</div></div>' +
+    '<div class="om">'+fmt(p.miles)+'</div>' +
+    '<div class="oc">'+visitedCount(p)+'/'+G.target+' '+stopWord()+'</div>' +
+    '</button>').join('') + '</div>';
+}
+
+function screenTurn(){
+  if(G.status === 'finished') return screenWin();
+  const p = cur();
+  let h = header('Turn', undefined);
+
+  h += flashBanner();
+
+  h += '<div class="card pass"><div class="stub">' +
+    '<span class="sl">Boarding pass</span>' +
+    '<span class="sr">' + brand('word', 78) + '</span></div>' +
+    '<div class="turnrow"><div class="turnmain">';
+
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">' +
+    '<div class="pawn p'+G.turn+'">'+esc(p.name.slice(0,1).toUpperCase())+'</div>' +
+    '<div><div style="font-weight:800;font-size:19px">'+esc(p.name)+'</div>' +
+    '<div class="tiny muted">Currently in '+esc(cityName(p.at))+
+      (p.firstClass?' · <b style="color:var(--first)">First class</b>':'')+'</div></div></div>';
+
+  h += '<div class="stat"><div class="n">'+fmt(p.miles)+'</div><div class="l">Frequent flyer miles</div></div>';
+
+  const seen = visitedCount(p);
+  const pct = Math.min(100, Math.round(seen/G.target*100));
+  const full = seen >= G.target;
+  h += '<div class="bar'+(full?' full':'')+'"><i style="width:'+pct+'%"></i></div>' +
+    '<div class="xtiny muted center" style="margin-bottom:12px">' +
+    '<b class="cnt">'+seen+'</b> of '+G.target+' '+stopWord()+' visited' +
+    (full ? ' — fly home to '+esc(cityName(p.home))+' to win!' : '') + '</div>';
+
+  h += '</div></div>';   // close .turnmain, close .turnrow
+
+  h += '<div class="perf"></div>' + cityChips(p) + '</div>';
+
+  if(p.mult > 1) h += '<div class="banner warn">'+ico('bolt')+' '+p.mult+'× mileage is armed — it applies to your next completed flight.</div>';
+  if(G.bounties.length) h += G.bounties.map(b=>'<div class="banner">'+ico('target')+' '+fmt(b.amount)+' miles waiting in '+esc(cityName(b.city))+' for the next player to land there.</div>').join('');
+
+  /* Opponents come last on the screen, not down the side of the boarding pass.
+     Beside it they made the card taller with every extra player until the
+     checklist slid under the End turn bar; between the checklist and the
+     actions they pushed the actions off instead. Below everything, the two
+     things you touch on your turn stay put whether there are two of you or
+     four — and there is a whole Scores tab for studying rivals. */
+  if(VIEW) return h + oppRail();   // a spectator gets the state, not the controls
+
+  h += '<div class="actions">' +
+    act('deck',ico('cards'),'Card','Log a card you just drew') +
+    act('flight',ico('plane'),'Flight completed','Enter two cities and bank the miles') +
+    act('redeem',ico('card'),'Redeem miles','5,000 · 10,000 · 20,000') +
+    (p.hand.length ? act('hand',ico('ticket'),'Held cards','You are holding '+p.hand.length+' card'+(p.hand.length>1?'s':'')) : '') +
+    '</div>';
+
+  h += '<div class="btn-row" style="margin-top:12px">' +
+    '<button class="btn ghost" data-act="sub" data-v="cities" style="text-align:center">Edit cities</button>' +
+    '<button class="btn ghost" data-act="sub" data-v="adjust" style="text-align:center">Adjust miles</button></div>';
+
+  return h + oppRail();   // End turn lives in the dock, not here
+}
+
+/* What just happened, and whether it took the turn with it.
+   `ended` — the app passed the turn on; offer the way back.
+   otherwise — the turn is still theirs; nudge them toward End turn. */
+function flashBanner(){
+  const f = UI.flash;
+  if(!f) return '';
+  if(!f.ended) return '<div class="banner" style="border-color:var(--good);color:var(--good)">' +
+    ico('plane')+' <b>'+esc(f.text)+'</b> — anything else this turn?</div>';
+  return '<div class="banner flash-end">' +
+    '<div>'+ico('plane')+' <b>'+esc(f.who)+':</b> '+esc(f.text)+'</div>' +
+    '<div class="fe-row"><span>Turn passed to <b>'+esc(f.next)+'</b>.</span>' +
+    '<button class="btn chipbtn" data-act="undo">Undo — back to '+esc(f.who)+'</button></div></div>';
+}
+function act(v, icon, ttl, dsc){
+  return '<button class="act" data-act="sub" data-v="'+v+'"><span class="ico">'+icon+'</span>' +
+    '<span><span class="ttl">'+ttl+'</span><span class="dsc">'+dsc+'</span></span></button>';
+}
+
+function screenWin(){
+  const w = byId(G.winner);
+  let h = header('Game over', undefined);
+  h += '<div class="center" style="margin:10px 0 18px"><span class="stamp">Arrived</span></div>';
+  h += '<div class="banner win">'+ico('trophy')+' '+esc(w.name)+' wins!</div>';
+  h += '<div class="card"><div class="stat"><div class="n">'+fmt(w.miles)+'</div>' +
+    '<div class="l">Final mileage balance</div></div>' +
+    '<p class="center tiny muted">' + (maxVisits()>1
+      ? 'Visited all 20 cities twice — 40 stops'
+      : 'Visited all '+G.target+' cities') +
+    ' and returned home to '+esc(cityName(w.home))+'.</p></div>';
+  h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Final standings</h3>' +
+    G.players.slice().sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)
+      .map((p,i)=>playerRow(p, G.players.indexOf(p), p.id===G.winner)).join('') + '</div>';
+  h += '<button class="btn" data-act="recap">See the recap' +
+    '<span class="sub">How the game was won</span></button>';
+  /* The likeliest next thing at a table that just finished a game is the same
+     table playing another one, so that is the button with the weight on it —
+     and it keeps the names and home cities rather than asking for them twice. */
+  h += '<button class="btn primary big" data-act="rematch">Play again — same players' +
+    '<span class="sub">Re-roll for play order and go</span></button>';
+  h += '<button class="btn" data-act="newconfirm">Start a new game' +
+    '<span class="sub">Different players or home cities</span></button>';
+  h += '<button class="btn ghost" data-act="unwin">Keep playing (undo win)</button>';
+  return h;
+}
+
+/* ---------------------------- sub-screens ---------------------------- */
+
+function subDeck(){
+  let h = header('Which deck?', 1);
+  h += '<p class="hint">Which pile did you draw from?</p>';
+  h += '<button class="btn big" data-act="deckpick" data-v="coach" style="border-color:var(--coach)">' +
+    '<span style="color:var(--coach)">Coach card</span><span class="sub">45 cards · drawn on a normal flight</span></button>';
+  h += '<button class="btn big" data-act="deckpick" data-v="first" style="border-color:var(--first)">' +
+    '<span style="color:var(--first)">First class card</span><span class="sub">25 cards · drawn while flying first class</span></button>';
+  return h;
+}
+
+function subCards(){
+  const deck = UI.tmp.deck;
+  const q = (UI.tmp.q||'').toLowerCase();
+  const list = CARDS.filter(c=>c.deck===deck && (!q || c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)));
+  let h = header(deck==='coach'?'Coach cards':'First class cards', 1);
+  h += '<label class="fld"><input type="text" data-in="q" value="'+esc(UI.tmp.q||'')+'" placeholder="Search cards…" autocomplete="off"></label>';
+  h += '<p class="hint">Tap the card you drew.</p><div class="list">';
+  h += list.map(c=>'<button class="row" data-act="cardpick" data-v="'+c.id+'">' +
+    '<span class="deckdot '+c.deck+'"></span>' +
+    '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span>' +
+    '</button>').join('') || '<div style="padding:18px" class="muted center">No cards match.</div>';
+  h += '</div>';
+  return h;
+}
+
+function subCard(){
+  const c = CARDS_BY_ID[UI.tmp.card];
+  const fromHand = !!UI.tmp.fromHand;
+  const ans = UI.tmp.ans || (UI.tmp.ans = {});
+  const fx = resolveFx(c, ans);
+  const needs = cardNeeds(c.fx);
+  const p = cur();
+
+  let h = header('Card', 1);
+  h += '<div class="gcard '+c.deck+'">' +
+    '<div class="gd">'+(c.deck==='coach'?'Coach':'First class')+'</div>' +
+    '<div class="gt">'+esc(c.title)+'</div>' +
+    '<div class="gx">'+esc(c.text)+'</div>' +
+    (c.footer?'<div class="gf">'+esc(c.footer)+'</div>':'') + '</div>';
+
+  const willHold = c.fx.hold && !fromHand;
+  if(willHold){
+    h += '<div class="banner">'+ico('ticket')+' This card is saved to '+esc(p.name)+'’s hand. Play it later from <b>Held cards</b>.</div>';
+    h += '<button class="btn primary big" data-act="apply">Save to hand</button>';
+    return h;
+  }
+
+  let missing = false;
+  // branch choice
+  if(c.fx.choice){
+    h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Choose one</h3>';
+    c.fx.choice.forEach((o,i)=>{
+      h += '<button class="btn'+(ans.branch===i?' primary':'')+'" data-act="branch" data-v="'+i+'">'+esc(o.label)+'</button>';
+    });
+    h += '</div>';
+    if(ans.branch == null) missing = true;
+  }
+
+  // city input
+  if(fx.fly === 'choose' || fx.addCity === 'choose'){
+    h += '<div class="card"><label class="fld" style="margin:0"><span>' +
+      (fx.addCity==='choose'?'City to add to your checklist':'City you are flying to') +
+      '</span>'+cityField('city', ans.city)+'</label></div>';
+    if(!ans.city) missing = true;
+  } else if(Array.isArray(fx.fly)){
+    h += '<div class="card"><label class="fld" style="margin:0"><span>Which city?</span>' +
+      cityField('city', ans.city, fx.fly)+'</label></div>';
+    if(!ans.city) missing = true;
+  }
+
+  // opponent input
+  if(fx.oppFly || fx.skipOpp || fx.stealCity || fx.stealCard){
+    h += '<div class="card"><label class="fld"'+((fx.stealCity||fx.stealCard)?'':' style="margin:0"')+'>' +
+      '<span>Which opponent?</span>'+oppSelect('oppId', ans.oppId)+'</label>';
+    if(!ans.oppId) missing = true;
+
+    if(fx.stealCity && ans.oppId){
+      const o = byId(ans.oppId);
+      const stealable = [...new Set(o.visited)].filter(cid=>cid !== o.home);
+      h += stealable.length
+        ? '<label class="fld" style="margin:0"><span>Take which city?</span>' + cityField('oppCity', ans.oppCity, stealable) + '</label>'
+        : '<div class="banner warn" style="margin:0">'+esc(o.name)+' has no cities you can take (home city is protected).</div>';
+      if(stealable.length && !ans.oppCity) missing = true;
+      if(!stealable.length) missing = false;
+    }
+    if(fx.stealCard && ans.oppId){
+      const o = byId(ans.oppId);
+      h += o.hand.length
+        ? '<label class="fld" style="margin:0"><span>Take which card?</span><select data-in="cardId">' +
+            '<option value="">Select a card…</option>' +
+            o.hand.map(cid=>'<option value="'+cid+'"'+(ans.cardId===cid?' selected':'')+'>'+esc(CARDS_BY_ID[cid].title)+'</option>').join('') +
+          '</select></label>'
+        : '<div class="banner warn" style="margin:0">'+esc(o.name)+' is not holding any cards.</div>';
+      if(o.hand.length && !ans.cardId) missing = true;
+      if(!o.hand.length) missing = false;
+    }
+    h += '</div>';
+  }
+
+  if(fx.note) h += '<div class="banner">'+ico('clipboard')+' '+esc(fx.note)+'</div>';
+  if(fx.fly && fx.flyEarns && ans.city && p.at)
+    h += '<div class="banner">Mileage '+esc(cityName(p.at))+' → '+esc(cityName(ans.city))+': <b>' +
+      fmt(milesBetween(p.at, ans.city) * (p.mult||1))+'</b> miles'+(p.mult>1?' ('+p.mult+'× applied)':'')+'</div>';
+
+  h += '<button class="btn primary big" data-act="apply" '+(missing?'disabled':'')+'>' +
+    (missing?'Answer the question above':'Apply card')+'</button>';
+  return h;
+}
+
+function subFlight(){
+  const p = cur();
+  const from = UI.tmp.from || (UI.tmp.from = p.at);
+  const to   = UI.tmp.to || '';
+  const noMiles = !!UI.tmp.noMiles;
+  const miles = to ? milesBetween(from, to) : 0;
+  const total = noMiles ? 0 : miles * (p.mult||1);
+
+  let h = header('Flight completed', 1);
+  h += '<div class="card">' +
+    '<label class="fld"><span>Departed from</span>'+cityField('from', from)+'</label>' +
+    '<label class="fld" style="margin-bottom:0"><span>Landed in</span>'+cityField('to', to)+'</label></div>';
+
+  if(to && to === from) h += '<div class="banner warn">Departure and destination are the same city.</div>';
+
+  h += '<label class="toggle"><input type="checkbox" data-in="noMiles"'+(noMiles?' checked':'')+'>' +
+    '<span><span class="tl">No miles earned on this flight</span>' +
+    '<span class="td">For a 20,000-mile automatic flight, Private Jet, Homesick or Brotherly Love.</span></span></label>';
+
+  if(to && to !== from){
+    h += '<div class="card">' + routeStrip(from, to) +
+      '<div class="kv"><span>Base mileage</span><b>'+fmt(miles)+'</b></div>' +
+      (p.mult>1 ? '<div class="kv"><span>Card multiplier</span><b>'+p.mult+'×</b></div>' : '') +
+      '<div class="kv"><span><b>Miles earned</b></span><b class="delta '+(total?'up':'')+'">'+(total?'+':'')+fmt(total)+'</b></div>' +
+      '<div class="kv"><span>New balance</span><b>'+fmt(p.miles+total)+'</b></div>' +
+      (canVisit(p,to)?'<div class="kv"><span>Checklist</span><b style="color:var(--done)">'+esc(cityName(to))+' ✓' +
+        (maxVisits()>1?' ('+(visitCount(p,to)+1)+' of '+maxVisits()+')':'')+'</b></div>':'') +
+      '</div>';
+  }
+
+  h += '<button class="btn primary big" data-act="doflight" '+(to && to!==from?'':'disabled')+'>' +
+    (to && to!==from ? 'Confirm flight' : 'Pick both cities') + '</button>';
+  return h;
+}
+
+function subRedeem(){
+  const p = cur();
+  let h = header('Redeem miles', 1);
+  h += '<div class="stat" style="margin-bottom:14px"><div class="n">'+fmt(p.miles)+'</div><div class="l">Available</div></div>';
+  const opt = (kind, cost, ttl, dsc) => {
+    const ok = p.miles >= cost;
+    return '<button class="act" data-act="redeem" data-v="'+kind+'" '+(ok?'':'disabled style="opacity:.4"')+'>' +
+      '<span class="ico" style="font-size:13px;font-weight:800;color:var(--navy)">'+(cost/1000)+'k</span>' +
+      '<span><span class="ttl">'+ttl+'</span><span class="dsc">'+dsc+(ok?'':' · not enough miles')+'</span></span></button>';
+  };
+  h += '<div class="actions">' +
+    opt('choose', REDEEM.CHOOSE, 'Choose city to fly to', 'Pick your destination instead of rolling the die') +
+    opt('first', REDEEM.FIRSTCLASS, 'First class upgrade', 'One-way upgrade — move 2 spaces per pip') +
+    opt('auto', REDEEM.AUTO, 'Automatic flight', 'Fly straight to any city · earns no miles') +
+    '</div>';
+  return h;
+}
+
+function subAuto(){
+  const p = cur();
+  let h = header('Automatic flight', 1);
+  h += '<p class="hint">Spend 20,000 miles to fly straight to any city. This is a private jet, so no miles are earned.</p>';
+  h += '<div class="card"><label class="fld" style="margin:0"><span>Fly to</span>'+cityField('city', UI.tmp.city)+'</label></div>';
+  if(UI.tmp.city) h += '<div class="card"><div class="kv"><span>Cost</span><b class="delta down">−20,000</b></div>' +
+    '<div class="kv"><span>New balance</span><b>'+fmt(p.miles-REDEEM.AUTO)+'</b></div>' +
+    '<div class="kv"><span>Checklist</span><b style="color:var(--done)">'+esc(cityName(UI.tmp.city))+' ✓</b></div></div>';
+  h += '<button class="btn primary big" data-act="doauto" '+(UI.tmp.city?'':'disabled')+'>Confirm automatic flight</button>';
+  return h;
+}
+
+function subHand(){
+  const p = cur();
+  let h = header('Held cards', 1);
+  h += '<p class="hint">Cards '+esc(p.name)+' has saved. Tap one to play it now.</p><div class="list">';
+  h += p.hand.map(cid=>{ const c = CARDS_BY_ID[cid];
+    return '<button class="row" data-act="playhand" data-v="'+cid+'"><span class="deckdot '+c.deck+'"></span>' +
+      '<span><span class="n">'+esc(c.title)+'</span><span class="d">'+esc(c.text.slice(0,64))+(c.text.length>64?'…':'')+'</span></span></button>';
+  }).join('') || '<div style="padding:18px" class="muted center">No held cards.</div>';
+  h += '</div>';
+  return h;
+}
+
+/* Shared by the picker's first paint and its live filter, so typing and
+   arriving on the screen can never disagree about what matches. */
+function cityMatches(){
+  const q = (UI.tmp._q||'').trim().toLowerCase();
+  const only = UI.tmp._only;
+  return CITIES.filter(c => (!only || only.indexOf(c.id) >= 0) &&
+    (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || String(c.n) === q));
+}
+function cityRows(list){
+  return list.map(c=>'<button class="row" data-act="citypicked" data-v="'+c.id+'">' +
+    '<span class="code">'+c.n+'</span>' +
+    '<span><span class="n">'+esc(c.name)+'</span><span class="d">'+c.id+'</span></span></button>').join('') ||
+    '<div style="padding:18px" class="muted center">No cities match.</div>';
+}
+function subCityPick(){
+  let h = header('Pick a city', 1);
+  h += '<label class="fld"><input type="text" data-in="_q" value="'+esc(UI.tmp._q||'')+'" ' +
+    'placeholder="Search by name, code or number…" autocomplete="off"></label>';
+  h += '<div class="list">' + cityRows(cityMatches()) + '</div>';
+  return h;
+}
+
+function subCities(){
+  const p = cur();
+  let h = header('Destination checklist', 1);
+  const max = maxVisits();
+  h += '<p class="hint">' + (max>1
+    ? 'Tap a city to cycle it for '+esc(p.name)+': not visited → once → twice → not visited.'
+    : 'Tap to check or uncheck a city for '+esc(p.name)+'.') +
+    ' Use this to fix a mistake.</p><div class="list">';
+  h += CITIES.map(c=>'<button class="row" data-act="togglecity" data-v="'+c.id+'">' +
+    '<span class="code">'+c.n+'</span>' +
+    '<span><span class="n">'+esc(c.name)+'</span><span class="d">'+c.id+(c.id===p.home?' · home city':'')+'</span></span>' +
+    '<span class="r">'+'✓'.repeat(visitCount(p,c.id))+'</span></button>').join('');
+  h += '</div>';
+  return h;
+}
+
+function subAdjust(){
+  const p = cur();
+  let h = header('Adjust miles', 1);
+  h += '<p class="hint">Manual correction for '+esc(p.name)+'. Logged like any other action so it can be undone.</p>';
+  h += '<div class="card"><label class="fld"><span>Amount (use a minus sign to subtract)</span>' +
+    '<input type="number" data-in="amt" value="'+esc(UI.tmp.amt||'')+'" placeholder="e.g. 500 or -500" inputmode="numeric"></label>' +
+    '<label class="fld" style="margin:0"><span>Reason (optional)</span>' +
+    '<input type="text" data-in="why" value="'+esc(UI.tmp.why||'')+'" placeholder="e.g. house rule"></label></div>';
+  const n = parseInt(UI.tmp.amt,10);
+  h += '<div class="card" id="adjPrev"'+(n?'':' style="display:none"')+'>' +
+    '<div class="kv"><span>New balance</span><b id="adjBal">'+fmt(p.miles+(n||0))+'</b></div></div>';
+  h += '<button class="btn primary big" id="adjBtn" data-act="doadjust" '+(n?'':'disabled')+'>Apply adjustment</button>';
+  return h;
+}
+
+function screenScores(){
+  let h = header('Scores', undefined) + shareCard();
+  // Every row opens that player's checklist, including your own.
+  h += G.players.map((p,i)=>{
+    return '<button class="card tight rowcard" data-act="player" data-v="'+p.id+'">' +
+      playerRow(p,i,i===G.turn) +
+      '<div style="padding:8px 4px 2px">' + cityChips(p) + '</div></button>';
+  }).join('');
+  return h;
+}
+
+function screenHistory(){
+  let h = header('History', undefined);
+  // Works mid-game too, so it reads as "how is this going" and not only "who won".
+  if(G.log.length) h += '<button class="btn" data-act="recap">Game recap' +
+    '<span class="sub">Standings, turning point and who is flying furthest</span></button>';
+  h += '<div class="card">' + (G.log.length
+    ? G.log.slice(0,60).map(e=>'<div class="log"><div class="lw">'+esc(e.who)+' — '+esc(e.text)+'</div>' +
+        (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('')
+    : '<div class="muted center" style="padding:14px">Nothing logged yet.</div>') + '</div>';
+  if(VIEW) return h;
+  if(G.log.length) h += '<button class="btn danger" data-act="undo">Undo last action</button>';
+  h += '<button class="btn ghost" data-act="newconfirm">Abandon game and start over</button>';
+  return h;
+}
+
+/* ---------------------------- one player ----------------------------
+   Read-only by design. Correcting somebody's cities stays on their own
+   turn, through Edit cities, so a correction lands in the log as theirs. */
+function screenPlayer(){
+  const p = byId(UI.tmp.pid) || cur();
+  const i = G.players.indexOf(p);
+  const max = maxVisits();
+  const left = CITIES.filter(c => visitCount(p, c.id) < max);
+
+  // .pcard brings its own border, so it doesn't want a .card around it here.
+  let h = header(p.name, 1) + playerRow(p, i, i === G.turn);
+
+  const flags = [];
+  if(i === G.turn && G.status === 'playing') flags.push(ico('die')+' Playing now');
+  if(p.firstClass) flags.push(ico('sparkle')+' Flying first class');
+  if(p.mult > 1)   flags.push(ico('bolt')+' '+p.mult+'× mileage armed');
+  if(p.skip)       flags.push(ico('warn')+' Misses '+p.skip+' turn'+(p.skip>1?'s':''));
+  if(p.hand.length)flags.push(ico('ticket')+' Holding '+p.hand.length+' card'+(p.hand.length>1?'s':''));
+  /* Already markup — each flag is an icon plus a literal string, and the only
+     interpolations are engine numbers. Escaping here would print the icon SVG
+     as visible source, which is exactly what it used to do. */
+  if(flags.length) h += '<div class="banner">'+flags.join(' · ')+'</div>';
+
+  h += '<div class="card"><h3 class="sechd">Checked off — '+visitedCount(p)+' of '+G.target+'</h3>' +
+    cityChips(p) + '</div>';
+
+  h += '<div class="card"><h3 class="sechd">Still to go — '+left.length+'</h3>';
+  h += left.length
+    ? '<div class="list">' + left.map(c=>{
+        const n = visitCount(p, c.id);
+        return '<div class="row"><span class="code">'+c.n+'</span>' +
+          '<span><span class="n">'+esc(c.name)+'</span>' +
+          '<span class="d">'+c.id+(c.id===p.home?' · home city':'')+'</span></span>' +
+          (max>1 ? '<span class="r">'+n+' of '+max+'</span>' : '') + '</div>';
+      }).join('') + '</div>'
+    : '<p class="tiny muted">Every city visited — now fly home to '+esc(cityName(p.home))+' to win.</p>';
+  h += '</div>';
+
+  const mine = G.log.filter(e => e.who === p.name).slice(0, 8);
+  if(mine.length) h += '<div class="card"><h3 class="sechd">Recent</h3>' +
+    mine.map(e=>'<div class="log"><div class="lw">'+esc(e.text)+'</div>' +
+      (e.detail?'<div class="lt">'+esc(e.detail)+'</div>':'') + '</div>').join('') + '</div>';
+
+  return h;
+}
+
+/* ---------------------------- the recap ----------------------------
+   Reads recapStats(), which reconstructs the game from the snapshots the log
+   already carries. Works mid-game as well as at the end, so the copy never
+   assumes anybody has actually won. */
+
+/* "42 minutes" — a game runs an evening at most, so hours are the ceiling. */
+function spanText(ms){
+  const m = Math.round(ms/60000);
+  if(m < 1)  return 'under a minute';
+  if(m < 60) return m + ' minute' + (m>1?'s':'');
+  const h = Math.floor(m/60), r = m%60;
+  return h + 'h' + (r ? ' ' + r + 'm' : '');
+}
+
+/* label / who / value — the same three-column row the city lists use. */
+function recapRow(label, who, value){
+  return '<div class="row"><span><span class="n">'+esc(label)+'</span>' +
+    '<span class="d">'+esc(who)+'</span></span>' +
+    '<span class="r">'+esc(value)+'</span></div>';
+}
+
+function screenRecap(){
+  const s = recapStats();
+  let h = header('Recap', 1);
+
+  const champ = s.winner || G.players.slice()
+    .sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)[0];
+
+  h += '<div class="card"><div class="center">' +
+    '<div style="font-size:32px;line-height:1">'+ico(s.winner?'trophy':'chart')+'</div>' +
+    '<h3 style="font-size:19px;margin-top:8px">' +
+      esc(champ.name) + (s.winner ? ' wins' : ' leads') + '</h3>';
+
+  if(s.full){
+    const bits = [s.turns + ' turn' + (s.turns===1?'':'s')];
+    if(s.ms > 30000) bits.push(spanText(s.ms));
+    bits.push(s.leadChanges ? s.leadChanges + ' lead change' + (s.leadChanges===1?'':'s')
+                            : 'never headed');
+    h += '<p class="tiny muted" style="margin-top:6px">'+esc(bits.join(' · '))+'</p>';
+  }
+  h += '</div></div>';
+
+  /* Without snapshots there is no game to narrate — only the standings, which
+     is exactly what a spectator's stripped log leaves behind. */
+  if(!s.full){
+    h += '<div class="card"><h3 class="sechd">Standings</h3>' +
+      G.players.slice().sort((a,b)=>visitedCount(b)-visitedCount(a)||b.miles-a.miles)
+        .map(p=>playerRow(p, G.players.indexOf(p), p.id===champ.id)).join('') +
+      '<p class="tiny muted" style="margin-top:10px">' +
+        (VIEW ? 'Turn-by-turn figures stay on the phone running the game.'
+              : 'Nothing has happened yet — the recap fills in as you play.') +
+      '</p></div>';
+    return h;
+  }
+
+  if(s.turning){
+    /* The leader and the player who acted are often different people — a
+       redemption can hand the lead to somebody else — so name the leader in
+       the claim and credit the action separately. */
+    const t = s.turning.e;
+    h += '<div class="card"><h3 class="sechd">Where it turned</h3>' +
+      '<p style="font-size:15px"><b>'+esc(champ.name)+'</b> took the lead for good.</p>' +
+      '<p class="tiny muted" style="margin-top:4px">'+esc(t.who)+' — '+esc(t.text) +
+      (t.detail ? ' · ' + esc(t.detail) : '') + '</p></div>';
+  } else if(s.ledThroughout){
+    h += '<div class="card"><h3 class="sechd">Where it turned</h3>' +
+      '<p style="font-size:15px">It never did — <b>'+esc(champ.name)+'</b> was in front ' +
+      'from the first turn.</p></div>';
+  }
+
+  /* One superlative per line, and only when a single player actually holds it —
+     "most flights" when everyone flew four times would just be naming whoever
+     happens to sit first. Ties are dropped rather than broken arbitrarily. */
+  const best = (pick, test) => {
+    const live = s.rows.filter(test);
+    if(!live.length) return null;
+    const top = Math.max.apply(null, live.map(pick));
+    const held = live.filter(r => pick(r) === top);
+    return held.length === 1 ? held[0] : null;
+  };
+  const notes = [];
+
+  const haul = best(r => r.haul.miles, r => !!r.haul);
+  if(haul) notes.push(recapRow('Biggest haul',
+    haul.p.name + ' · ' + cityName(haul.haul.from) + ' → ' + cityName(haul.haul.to),
+    fmt(haul.haul.miles) + ' mi'));
+
+  const most = best(r=>r.cities, r=>r.cities > 0);
+  if(most) notes.push(recapRow('Most cities', most.p.name,
+    most.cities + '/' + G.target));
+
+  const turn = best(r=>r.bestTurn, r=>r.bestTurn > 0);
+  if(turn) notes.push(recapRow('Best single turn', turn.p.name,
+    fmt(turn.bestTurn) + ' mi'));
+
+  const spent = best(r=>r.redeemed, r=>r.redeemed > 0);
+  if(spent) notes.push(recapRow('Most redeemed', spent.p.name,
+    fmt(spent.redeemed) + ' mi'));
+
+  const busy = best(r=>r.flights, r=>r.flights > 0);
+  if(busy) notes.push(recapRow('Most flights', busy.p.name,
+    busy.flights + ''));
+
+  if(notes.length) h += '<div class="card"><h3 class="sechd">Notable</h3>' +
+    '<div class="list">' + notes.join('') + '</div></div>';
+
+  h += '<div class="card"><h3 class="sechd">Every flyer</h3>' +
+    s.rows.slice().sort((a,b)=>b.cities-a.cities||b.p.miles-a.p.miles).map(r=>{
+      const per = r.turns ? (r.cities/r.turns).toFixed(1) : '—';
+      return playerRow(r.p, G.players.indexOf(r.p), r.p.id===champ.id) +
+        '<div class="list" style="margin:0 0 14px">' +
+          recapRow('Turns taken', '', r.turns + '') +
+          recapRow('Miles earned', '', fmt(r.earned)) +
+          (r.redeemed ? recapRow('Miles redeemed', '', fmt(r.redeemed)) : '') +
+          recapRow('Flights', '', r.flights + '') +
+          recapRow('Cities per turn', '', per) +
+        '</div>';
+    }).join('') + '</div>';
+
+  return h;
+}
+
+/* ==========================================================================
+   Sharing — the host's panel and the spectator's bar
+   ========================================================================== */
+
+/* "12s ago" / "3m ago" — precise enough to tell live apart from stalled. */
+function ago(t){
+  const s = Math.max(0, Math.round((Date.now()-t)/1000));
+  if(s < 60)   return s+'s ago';
+  if(s < 3600) return Math.round(s/60)+'m ago';
+  return Math.round(s/3600)+'h ago';
+}
+
+function shareCard(){
+  if(VIEW || !syncOn() || !G) return '';
+  const s = G.share;
+  /* A share missing its password is one saved before passwords existed. It never
+     pushes (doPush refuses), so it is offered here as one that hasn't started —
+     which is the truth of it. */
+  if(!s || !s.on || !s.pass){
+    // Suggested once per render of this card, and only while it is still a
+    // suggestion — retyping the box on every keystroke would be unusable.
+    if(UI.tmp.pass === undefined) UI.tmp.pass = makePass();
+    return '<div class="card"><h3 class="sechd">Share this game</h3>' +
+      '<p class="tiny muted" style="margin:2px 0 12px">Everyone else gets a link and follows the ' +
+      'scores on their own phone, updating as you play. They can watch, not touch.</p>' +
+      '<label class="fld"><span>Password</span>' +
+      '<input type="text" data-in="pass" value="'+esc(UI.tmp.pass)+'" autocomplete="off" ' +
+        'autocapitalize="none" spellcheck="false"></label>' +
+      '<p class="tiny muted" style="margin:-6px 0 12px">The game is scrambled before it leaves this ' +
+      'phone, and this is the only thing that unscrambles it — so the code on its own gets nobody in. ' +
+      'Change it to anything you like.</p>' +
+      '<button class="btn primary" data-act="sharestart">Start sharing</button></div>';
+  }
+
+  return '<div class="card"><h3 class="sechd">Sharing live</h3>' +
+    '<div class="codebig">'+esc(s.code)+'</div>' +
+    '<div class="passbig">'+esc(s.pass)+'</div>' +
+    '<p class="tiny muted center" style="margin:0 0 12px">Read both out. The link carries the code — ' +
+    'the password never travels with it, so say that part yourself.</p>' +
+    '<div id="syncState">'+syncStatus()+'</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn" data-act="sharecopy" style="text-align:center">' +
+        (navigator.share ? 'Send link' : 'Copy link') + '</button>' +
+      '<button class="btn ghost" data-act="sharestop" style="text-align:center">Stop sharing</button>' +
+    '</div></div>';
+}
+
+function syncStatus(){
+  if(shareErr) return '<div class="sync bad">'+ico('warn')+' Can\'t reach the server — anyone watching is ' +
+    'seeing an older scoreboard. Your game is unaffected.</div>';
+  if(!shareAt) return '<div class="sync">Sending…</div>';
+  return '<div class="sync ok">● Live · sent '+ago(shareAt)+'</div>';
+}
+
+function viewBar(){
+  if(!VIEW) return '';
+  return '<div class="viewbar"><span class="vbe">'+ico('eye')+'</span>' +
+    '<div class="vbt"><b>'+esc(UI.code||'')+'</b>' +
+    '<span id="viewState">'+viewStatus()+'</span></div>' +
+    '<button class="btn chipbtn ghost" data-act="leaveview">Leave</button></div>';
+}
+function viewStatus(){
+  // Don't claim to be watching a game we never found.
+  if(UI.viewErr === 'notfound') return 'No such game';
+  if(UI.viewErr === 'offline')  return 'Can\'t connect';
+  if(UI.screen === 'viewpass')  return 'Locked';
+  if(!G)      return 'Connecting…';
+  if(viewErr) return 'Reconnecting…';
+  return 'Watching · updated ' + (viewAt ? ago(viewAt) : 'just now');
+}
+
+/* The status ticks without a re-render: render() scrolls to the top, and nobody
+   asked to be sent there just because a poll came back. */
+function paintSync(){
+  const a = document.getElementById('syncState');
+  if(a) a.innerHTML = syncStatus();
+  const b = document.getElementById('viewState');
+  if(b) b.innerHTML = viewStatus();
+}
+
+function screenViewLoading(){
+  let h = '<div style="height:26px"></div><div class="hero">' + logo(92) + '</div>';
+  if(UI.viewErr === 'notfound') h += '<div class="card"><h3>No game with that code</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">Codes are four digits, like <b>4206</b>. Check it, ' +
+    'or ask whoever is running the game — they may have stopped sharing.</p>' +
+    '<button class="btn" data-act="leaveview">Back to my own game</button></div>';
+  else if(UI.viewErr === 'offline') h += '<div class="card"><h3>Can\'t reach the game</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">No connection, or the server isn\'t answering.</p>' +
+    '<button class="btn" data-act="retryview">Try again</button>' +
+    '<button class="btn ghost" data-act="leaveview">Back to my own game</button></div>';
+  else h += '<div class="card center"><p class="muted" style="padding:10px">Loading ' +
+    esc(UI.code||'game')+'…</p></div>';
+  return h;
+}
+
+/* The game came down scrambled and we have nothing that opens it. Nothing is
+   checked against a server here — the password either decrypts the payload or
+   it doesn't, and that is the whole of the test. */
+function screenViewPass(){
+  const busy = !!UI.passBusy;
+  let h = '<div style="height:26px"></div><div class="hero">' + logo(92) + '</div>';
+  h += '<div class="card"><h3>Game '+esc(UI.code||'')+' is password protected</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">Whoever is keeping score has it on their ' +
+    'screen — ask them to read it out.</p>' +
+    (UI.passErr ? '<div class="sync bad">'+ico('warn')+' That password doesn\'t open this game. ' +
+      'Check it and try again.</div>' : '') +
+    '<label class="fld"><input type="password" data-in="pass" value="'+esc(UI.tmp.pass||'')+'" ' +
+      'placeholder="Password" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' +
+    '<button class="btn primary" data-act="viewunlock"'+(busy?' disabled':'')+'>' +
+      (busy ? 'Unlocking…' : 'Watch this game') + '</button>' +
+    '<button class="btn ghost" data-act="leaveview">Back to my own game</button></div>';
+  return h;
+}
+
+/* ==========================================================================
+   Router
+   ========================================================================== */
+function render(){
+  let h = '';
+  if(UI.screen === 'loading')     h = screenViewLoading();
+  else if(UI.screen === 'viewpass') h = screenViewPass();
+  else if(UI.screen === 'start')  h = screenStart();
+  else if(UI.screen === 'count')  h = screenCount();
+  // The city picker is a sub-screen of the turn flow everywhere else, but the
+  // setup screen needs it too — and it is a screen, not a sub, so route it here.
+  else if(UI.screen === 'setup')  h = UI.sub === 'citypick' ? subCityPick() : screenSetup();
+  else if(UI.screen === 'order')  h = screenOrder();
+  else if(UI.screen === 'scores') h = screenScores() + dock(false);
+  else if(UI.screen === 'history')h = screenHistory() + dock(false);
+  else if(UI.screen === 'player') h = screenPlayer() + dock(false);
+  else if(UI.screen === 'recap')  h = screenRecap() + dock(false);
+  else {
+    const map = {deck:subDeck, cards:subCards, card:subCard, flight:subFlight, redeem:subRedeem,
+                 auto:subAuto, hand:subHand, cities:subCities, adjust:subAdjust, citypick:subCityPick};
+    // A finished game gets the tab bar but no End turn — there is no next turn.
+    // Neither does a spectator, who has no turn to end.
+    h = (UI.sub && map[UI.sub]) ? map[UI.sub]() : screenTurn() + dock(!VIEW && G.status === 'playing');
+  }
+  app.classList.toggle('viewing', VIEW);
+  app.innerHTML = viewBar() + h;
+
+  /* The dock is one bar on most screens and two on the turn screen, so reserve
+     its measured height rather than guessing a constant. */
+  const d = app.querySelector('.dock');
+  app.style.paddingBottom = (d ? d.offsetHeight + 24 : 24) + 'px';
+
+  window.scrollTo(0,0);
+}
+</script>

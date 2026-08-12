@@ -1,0 +1,169 @@
+<script>
+/* ==========================================================================
+   Frequent Flyer — Scorekeeper
+   Data transcribed from the printed game components (© Frequent Games LLC).
+   Mileage matrix machine-verified symmetric across all 190 city pairs.
+   ========================================================================== */
+
+const CITIES = [
+  {n: 1, id:'ATL', name:'Atlanta'},        {n: 2, id:'BOS', name:'Boston'},
+  {n: 3, id:'CLT', name:'Charlotte'},      {n: 4, id:'ORD', name:'Chicago'},
+  {n: 5, id:'DFW', name:'Dallas'},         {n: 6, id:'DEN', name:'Denver'},
+  {n: 7, id:'DTW', name:'Detroit'},        {n: 8, id:'IAH', name:'Houston'},
+  {n: 9, id:'LAS', name:'Las Vegas'},      {n:10, id:'LAX', name:'Los Angeles'},
+  {n:11, id:'MEM', name:'Memphis'},        {n:12, id:'MIA', name:'Miami'},
+  {n:13, id:'MSP', name:'Minneapolis'},    {n:14, id:'JFK', name:'New York'},
+  {n:15, id:'PHL', name:'Philadelphia'},   {n:16, id:'PHX', name:'Phoenix'},
+  {n:17, id:'SFO', name:'San Francisco'},  {n:18, id:'SEA', name:'Seattle'},
+  {n:19, id:'STL', name:'St. Louis'},      {n:20, id:'IAD', name:'Washington DC'},
+];
+const CIDX = {}; CITIES.forEach((c,i)=>CIDX[c.id]=i);
+const cityName = id => (CITIES[CIDX[id]]||{}).name || id;
+
+/* Row/col order matches CITIES above (1..20). Symmetric; diagonal 0. */
+const MILEAGE = [
+ [   0, 900, 500, 600, 700,1200, 600, 700,1700,1900, 500, 600, 900, 800, 700,1600,2100,2200, 500, 500],
+ [ 900,   0, 700, 900,1600,1800, 600,1600,2400,2600,1100,1300,1100, 500, 500,2300,2700,2500,1000, 500],
+ [ 500, 700,   0, 600, 900,1300, 500, 900,1900,2100, 500, 700, 900, 500, 500,1800,2300,2300, 600, 500],
+ [ 600, 900, 600,   0, 800, 900, 500, 900,1500,1700, 500,1200, 500, 700, 700,1400,1800,1700, 500, 600],
+ [ 700,1600, 900, 800,   0, 600,1000, 500,1100,1200, 500,1100, 900,1400,1300, 900,1500,1700, 600,1200],
+ [1200,1800,1300, 900, 600,   0,1100, 900, 600, 900, 900,1700, 700,1600,1600, 600,1000,1000, 800,1500],
+ [ 600, 600, 500, 500,1000,1100,   0,1100,1700,2000, 600,1200, 500, 500, 500,1700,2100,1900, 500, 500],
+ [ 700,1600, 900, 900, 500, 900,1100,   0,1200,1400, 500,1000,1000,1400,1300,1000,1600,1900, 700,1200],
+ [1700,2400,1900,1500,1100, 600,1700,1200,   0, 500,1400,2200,1300,2200,2200, 500, 500, 900,1400,2100],
+ [1900,2600,2100,1700,1200, 900,2000,1400, 500,   0,1600,2300,1500,2500,2400, 500, 500,1000,1600,2300],
+ [ 500,1100, 500, 500, 500, 900, 600, 500,1400,1600,   0, 900, 700,1000, 900,1300,1800,1900, 500, 700],
+ [ 600,1300, 700,1200,1100,1700,1200,1000,2200,2300, 900,   0,1500,1100,1000,2000,2600,2700,1100, 900],
+ [ 900,1100, 900, 500, 900, 700, 500,1000,1300,1500, 700,1500,   0,1000,1000,1300,1600,1400, 500, 900],
+ [ 800, 500, 500, 700,1400,1600, 500,1400,2200,2500,1000,1100,1000,   0, 500,2200,2600,2400, 900, 500],
+ [ 700, 500, 500, 700,1300,1600, 500,1300,2200,2400, 900,1000,1000, 500,   0,2100,2500,2400, 800, 500],
+ [1600,2300,1800,1400, 900, 600,1700,1000, 500, 500,1300,2000,1300,2200,2100,   0, 700,1100,1300,2000],
+ [2100,2700,2300,1800,1500,1000,2100,1600, 500, 500,1800,2600,1600,2600,2500, 700,   0, 700,1700,2400],
+ [2200,2500,2300,1700,1700,1000,1900,1900, 900,1000,1900,2700,1400,2400,2400,1100, 700,   0,1700,2300],
+ [ 500,1000, 600, 500, 600, 800, 500, 700,1400,1600, 500,1100, 500, 900, 800,1300,1700,1700,   0, 700],
+ [ 500, 500, 500, 600,1200,1500, 500,1200,2100,2300, 700, 900, 900, 500, 500,2000,2400,2300, 700,   0],
+];
+/* Rules: "There is a minimum amount of 500 miles earned, even for a short flight." */
+const MIN_SEGMENT = 500;
+function milesBetween(a,b){
+  if(!a||!b||a===b) return 0;
+  return Math.max(MIN_SEGMENT, MILEAGE[CIDX[a]][CIDX[b]]);
+}
+
+const START_MILES = 5000;
+const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
+
+/* --------------------------------------------------------------------------
+   CARDS
+   fx fields (all optional):
+     miles          delta applied to the current player
+     milesIf        {cities:[], mode:'all'|'any'|'none', amount}
+     collectEach    each opponent pays the current player this amount
+     fly            city id | 'choose' | 'home' | [ids]   (relocate + check off)
+     flyEarns       whether that flight earns mileage
+     flyIfNot       city id — only fly if NOT yet visited
+     flyIfNotElse   text shown when the condition fails
+     bonusIfVisited {city, amount} — extra bonus when already visited
+     oppFly         city id — a chosen opponent is forced to fly there (no miles)
+     addCity        'choose' — add a city to the checklist without flying
+     stealCity      true — take a city from an opponent
+     stealCard      true — take a held card from an opponent
+     skipSelf / skipOpp   number of turns to skip
+     firstClass     true|false — set travel class for the current flight
+     multiplier     n — sets the mileage multiplier for the next completed flight
+     bounty         {city, amount} — pays out to the next player reaching that city
+     hold           true — card is kept in hand and played later
+     choice         [{label, fx}] — player picks one branch
+     note           board-only instruction; no scoring change
+     again          true — the turn continues after this card, so don't auto-end it
+                    (a re-roll, or a card that sends you to draw another card)
+   -------------------------------------------------------------------------- */
+
+const WISH = {hold:true, note:'Keep this card. Play it to choose your destination instead of rolling.'};
+const UPG  = {hold:true, note:'Keep this card. Play it for a free first class upgrade.'};
+
+const CARDS = [
+/* ------------------------------ COACH (45) ------------------------------ */
+{id:'C1', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C2', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C3', deck:'coach', title:'Wish List', text:'You may choose the city to fly to, instead of rolling the 20-sided die, on any future flight.', footer:'Card may be saved', fx:WISH},
+{id:'C4', deck:'coach', title:'All Systems Go', text:'Move forward 3 spaces on this turn.', fx:{note:'Move your pawn forward 3 spaces.'}},
+{id:'C5', deck:'coach', title:'Baby On Board', text:'Move backward 3 spaces on this turn.', fx:{note:'Move your pawn backward 3 spaces.'}},
+{id:'C6', deck:'coach', title:'Brotherly Love', text:'Force the opponent of your choice to advance directly to Philadelphia on this turn. That player does not earn any miles on his or her flight to Philadelphia.', fx:{oppFly:'PHL'}},
+{id:'C7', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'C8', deck:'coach', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'C9', deck:'coach', title:'Bulkhead Seating', text:'Move forward 4 spaces on this turn.', fx:{note:'Move your pawn forward 4 spaces.'}},
+{id:'C10',deck:'coach', title:'Strong Tailwinds', text:'Move forward 5 spaces on this turn.', fx:{note:'Move your pawn forward 5 spaces.'}},
+{id:'C11',deck:'coach', title:'Deja Vu', text:'Return immediately to the city you departed from on this flight and restart the same flight again on this turn.', fx:{note:'Return your pawn to the city you departed from and restart the flight.'}},
+{id:'C12',deck:'coach', title:'Clear Skies', text:'Move forward 3 spaces on this turn.', fx:{note:'Move your pawn forward 3 spaces.'}},
+{id:'C13',deck:'coach', title:'Windy City', text:'Advance directly to Chicago on this flight. Earn miles from your departure city to Chicago.', fx:{fly:'ORD', flyEarns:true}},
+{id:'C14',deck:'coach', title:'Donation', text:'You lose 500 miles after your generous charitable donation.', fx:{miles:-500}},
+{id:'C15',deck:'coach', title:'Window Seat', text:'Move forward 2 spaces on this turn.', fx:{note:'Move your pawn forward 2 spaces.'}},
+{id:'C16',deck:'coach', title:'Door #1 or Door #2', text:'You may either take the top card from the first class deck or collect 5,000 miles on this turn.', fx:{choice:[
+  {label:'Collect 5,000 miles', fx:{miles:5000}},
+  {label:'Draw a first class card', fx:{again:true, note:'Draw the top card from the first class deck, then log it as a First Class card.'}}
+]}},
+{id:'C17',deck:'coach', title:'Turbulence', text:'Lose your next turn and move backward 5 spaces on this turn.', fx:{skipSelf:1, note:'Move your pawn backward 5 spaces.'}},
+{id:'C18',deck:'coach', title:'Double Miles', text:'Earn double miles on the future flight of your choice if it is completed to its expected destination.', footer:'Multiply your miles earned times two', fx:{hold:true, multiplier:2}},
+{id:'C19',deck:'coach', title:'Golden Gate', text:'If you have already visited both San Francisco and Los Angeles, earn a bonus of 5,000 miles.', fx:{milesIf:{cities:['SFO','LAX'], mode:'all', amount:5000}}},
+{id:'C20',deck:'coach', title:'Triple Miles', text:'Earn triple miles on the future flight of your choice if it is completed to its expected destination.', footer:'Multiply your miles earned times three', fx:{hold:true, multiplier:3}},
+{id:'C21',deck:'coach', title:'Flight Cancelled', text:'Lose your next turn.', fx:{skipSelf:1}},
+{id:'C22',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C23',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C24',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
+{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000}}},
+{id:'C26',deck:'coach', title:'Emergency Landing', text:'Flight immediately cleared to land at nearest city from your current location on this turn. Collect miles from your departure city to the emergency city.', fx:{fly:'choose', flyEarns:true, note:'Land at the nearest city to your pawn.'}},
+{id:'C27',deck:'coach', title:'Grand Canyon', text:'If you have visited Phoenix, move forward 7 spaces, otherwise move backward 7 spaces.', fx:{note:'If Phoenix is checked off, move forward 7 spaces — otherwise move backward 7 spaces.'}},
+{id:'C28',deck:'coach', title:'Happy Birthday', text:'Receive 500 miles from every player on this turn.', fx:{collectEach:500}},
+{id:'C29',deck:'coach', title:'Jet Lag', text:'Lose your next 2 turns and move backward 5 spaces.', fx:{skipSelf:2, note:'Move your pawn backward 5 spaces.'}},
+{id:'C30',deck:'coach', title:'Stolen Baggage', text:'Lose 2,000 miles on this turn.', fx:{miles:-2000}},
+{id:'C31',deck:'coach', title:'Homesick', text:'Return immediately to your home city on this turn. Do not earn any miles on the flight home.', fx:{fly:'home', flyEarns:false}},
+{id:'C32',deck:'coach', title:'Heavy Air Traffic', text:'Move backward 4 spaces on this turn.', fx:{note:'Move your pawn backward 4 spaces.'}},
+{id:'C33',deck:'coach', title:'In-Flight Meal', text:'Meal does not sit well with your stomach, move backward 2 spaces on this turn.', fx:{note:'Move your pawn backward 2 spaces.'}},
+{id:'C34',deck:'coach', title:'Lone Star State', text:'Advance immediately to either Houston or Dallas (your choice) on this turn. Earn miles from your departure to your new destination.', fx:{fly:['IAH','DFW'], flyEarns:true}},
+{id:'C35',deck:'coach', title:'New York Marathon', text:'Next player to visit New York wins 20,000 miles.', footer:'Place this card on the game board until a player visits New York', fx:{bounty:{city:'JFK', amount:20000}}},
+{id:'C36',deck:'coach', title:'Mall of America', text:'Advance immediately to Minneapolis on this turn. Earn miles from your departure city to Minneapolis.', fx:{fly:'MSP', flyEarns:true}},
+{id:'C37',deck:'coach', title:'Ski Season', text:'Advance to Denver on this turn. Earn miles from your departure city to Denver.', fx:{fly:'DEN', flyEarns:true}},
+{id:'C38',deck:'coach', title:'Tea Party', text:'If you have not visited Boston yet, immediately advance directly to Boston on this turn and earn miles from your departure city to Boston; otherwise roll again.', fx:{flyIfNot:'BOS', flyEarns:true, flyIfNotElse:'You have already visited Boston — roll again.'}},
+{id:'C39',deck:'coach', title:'Lucky Las Vegas', text:'Advance directly to Las Vegas on this turn. Earn miles from your departure city to Las Vegas.', fx:{fly:'LAS', flyEarns:true}},
+{id:'C40',deck:'coach', title:'Late Arrival', text:'Move backward 5 spaces on this turn.', fx:{note:'Move your pawn backward 5 spaces.'}},
+{id:'C41',deck:'coach', title:'Red Eye Flight', text:'Lose your next turn, but move forward 8 spaces.', fx:{skipSelf:1, note:'Move your pawn forward 8 spaces.'}},
+{id:'C42',deck:'coach', title:'The Arch', text:'Advance immediately to St. Louis on this turn. Earn miles from your departure city to St. Louis.', fx:{fly:'STL', flyEarns:true}},
+{id:'C43',deck:'coach', title:'Standby', text:'Fly first class for the remainder of this flight.', footer:'Save this card until the remainder of this flight', fx:{firstClass:true}},
+{id:'C44',deck:'coach', title:'Coronavirus Lockdown', text:'Move backward 4 spaces and lose your next turn.', fx:{skipSelf:1, note:'Move your pawn backward 4 spaces.'}},
+{id:'C45',deck:'coach', title:'Odd or Even', text:'Roll the 20-sided die, if the number rolled is odd, move forward the amount of the roll; if the number rolled is even, move backward the amount of the roll on this turn.', fx:{note:'Roll the die: odd = move forward that many spaces, even = move backward that many.'}},
+
+/* --------------------------- FIRST CLASS (25) --------------------------- */
+{id:'F1', deck:'first', title:'Ahead of Schedule', text:'Move forward 6 spaces on this turn.', fx:{note:'Move your pawn forward 6 spaces.'}},
+{id:'F2', deck:'first', title:'Disruptive', text:'Return immediately to your departure city and restart your current flight on this turn. You still remain in first class.', fx:{note:'Return your pawn to your departure city and restart the flight. You stay in first class.'}},
+{id:'F3', deck:'first', title:'Gift', text:'You may add the city of your choice to your destination checklist on this turn.', fx:{addCity:'choose'}},
+{id:'F4', deck:'first', title:'Downgrade', text:'Move back to coach class for the remainder of this flight.', fx:{firstClass:false}},
+{id:'F5', deck:'first', title:'Downgrade', text:'Move back to coach class for the remainder of this flight.', fx:{firstClass:false}},
+{id:'F6', deck:'first', title:'Super First Class', text:'Move three times the roll of the 20-sided die instead of the normal two times for the remainder of this flight only.', footer:'A roll of 20 would move 60 spaces', fx:{note:'For the rest of this flight, move 3× your die roll instead of 2×.'}},
+{id:'F7', deck:'first', title:'Grand Theft Air', text:'Take any one coach or first class card for yourself from any opponent on this turn.', fx:{stealCard:true}},
+{id:'F8', deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F9', deck:'first', title:'Lottery Winner', text:'Collect 10,000 miles on this turn.', fx:{miles:10000}},
+{id:'F10',deck:'first', title:'Early Arrival', text:'Advance forward directly to your expected destination on this turn.', fx:{fly:'choose', flyEarns:true, note:'Advance straight to the destination you were already flying to.'}},
+{id:'F11',deck:'first', title:"Pilot's Orders", text:'You may either lose your next turn and forfeit 3,000 miles or continue the rest of this flight in coach.', fx:{choice:[
+  {label:'Continue this flight in coach', fx:{firstClass:false}},
+  {label:'Lose next turn and forfeit 3,000 miles', fx:{skipSelf:1, miles:-3000}}
+]}},
+{id:'F12',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F13',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F14',deck:'first', title:'Smooth Sailing', text:'Roll again.', fx:{again:true, note:'Roll the 20-sided die again.'}},
+{id:'F15',deck:'first', title:'No Show', text:'Force the player of your choice to miss their next turn.', fx:{skipOpp:1}},
+{id:'F16',deck:'first', title:'Private Jet', text:'Redeem this card for an automatic future flight to the city of your choice. Do not earn miles on that flight, since you will not be flying commercial air.', footer:'Card may be saved', fx:{hold:true, fly:'choose', flyEarns:false}},
+{id:'F17',deck:'first', title:'Quadruple Miles', text:'Earn quadruple miles on this flight if it is completed to its expected destination city.', footer:'Multiply your mileage by 4', fx:{multiplier:4}},
+{id:'F18',deck:'first', title:'Robbery', text:"Choose any one city from the opponent of your choice (except that opponent's home city) and remove it from their list and add it to your list on this turn.", fx:{stealCity:true}},
+{id:'F19',deck:'first', title:'City of Dreams', text:'Advance directly to the city of your choice on this turn. Earn miles from the city you departed from to the new destination.', fx:{fly:'choose', flyEarns:true}},
+{id:'F20',deck:'first', title:'Fortune Teller', text:'Select the next three cards from the coach card deck on this turn and select any one card for yourself; discard the two coach cards that you do not use.', fx:{again:true, note:'Draw the top 3 coach cards, keep 1, discard 2. Then log the card you kept.'}},
+{id:'F21',deck:'first', title:'White House', text:'Earn a bonus of 5,000 miles if you have already been to Washington DC.', fx:{milesIf:{cities:['IAD'], mode:'all', amount:5000}}},
+{id:'F22',deck:'first', title:'Queen City', text:'Advance directly to Charlotte on this turn and earn mileage from your departure city to Charlotte. If you have already visited Charlotte, earn a bonus of 5,000 miles.', fx:{fly:'CLT', flyEarns:true, bonusIfVisited:{city:'CLT', amount:5000}}},
+{id:'F23',deck:'first', title:'Georgia on My Mind', text:'Advance directly to Atlanta on this turn. Earn miles from your departure city to Atlanta.', fx:{fly:'ATL', flyEarns:true}},
+{id:'F24',deck:'first', title:'Motor City', text:'If you have not visited Detroit advance there directly on this turn and earn miles from your departure city to Detroit. If you have already visited Detroit, roll again.', fx:{flyIfNot:'DTW', flyEarns:true, flyIfNotElse:'You have already visited Detroit — roll again.'}},
+{id:'F25',deck:'first', title:'Discount', text:'Earn a first class upgrade for 5,000 miles (half of the usual redemption cost) on the future flight of your choice.', footer:'Card may be saved', fx:{hold:true, miles:-5000, firstClass:true}},
+];
+
+const CARDS_BY_ID = {}; CARDS.forEach(c=>CARDS_BY_ID[c.id]=c);
+
+</script>

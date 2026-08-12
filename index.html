@@ -324,7 +324,7 @@
      a label wrapping a button swallows the button's own click. */
   .fld{display:block;margin-bottom:14px}
   .fld > span{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:6px}
-  input[type=text],input[type=number],select{width:100%;padding:13px 14px;border-radius:11px;
+  input[type=text],input[type=number],input[type=password],select{width:100%;padding:13px 14px;border-radius:11px;
     border:1px solid var(--line);background:var(--surface);color:var(--ink)}
   input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px}
 
@@ -561,6 +561,12 @@
   .codebig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;
     font-size:46px;letter-spacing:.16em;text-indent:.16em;text-align:center;color:var(--navy);
     background:var(--surface2);border-radius:11px;padding:16px 8px;margin-bottom:8px}
+  /* The password gets the same treatment one size down — it is read out across
+     the same table, but it is words rather than digits and wants to wrap. */
+  .passbig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;
+    font-size:24px;letter-spacing:.02em;text-align:center;color:var(--navy);
+    background:var(--surface2);border-radius:11px;padding:12px 8px;margin-bottom:8px;
+    overflow-wrap:anywhere}
   .sync{font-size:13px;text-align:center;color:var(--ink2);margin-bottom:12px}
   .sync.ok{color:var(--good);font-weight:600}
   .sync.bad{color:var(--bad);text-align:left;line-height:1.4}
@@ -1379,7 +1385,13 @@ const SYNC_KEY = 'sb_publishable_BJ02mjBe1S6_56ZioeEC5g_RlDi7SFu';
    artifact preview still points at the real site. */
 const SHARE_URL = 'https://matthewnhorowitz-bot.github.io/frequent-flyer/';
 
-const syncOn  = () => !!(SYNC_URL && SYNC_KEY);
+/* Every payload is encrypted before it leaves the phone, so sharing is only
+   offered where the browser will actually do that — which is any secure context,
+   i.e. the real site and localhost, but not a file:// double-click. Somewhere
+   crypto.subtle is missing, the app is exactly as offline as a blank key makes
+   it, which is a failure mode the UI already handles. */
+const cryptoOn = () => !!(window.crypto && window.crypto.subtle);
+const syncOn  = () => !!(SYNC_URL && SYNC_KEY && cryptoOn());
 const gameUrl = code => SHARE_URL + '#' + code;
 
 /* One row per game, keyed by the four-digit code. `cols` keeps the reply down to
@@ -1427,6 +1439,67 @@ function hydrateShare(raw){
   };
 }
 
+/* ---------- the password ----------
+
+   The code says which game. The password says whether you may read it — and it
+   does that by being the only thing that can decrypt the payload, not by being
+   checked anywhere. There are only 10,000 codes; anyone could walk all of them
+   in a minute. What they'd get is ciphertext.
+
+   Encryption protects reading, not writing: as far as this client knows, anyone
+   may still upsert to any code — whatever the table's row-level security allows.
+   A hostile overwrite is no more readable than anything else, though, so the
+   worst it does is send watchers back to the password screen. */
+
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64   = buf => btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+const unb64 = s   => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const rand  = n   => crypto.getRandomValues(new Uint8Array(n));
+
+/* PBKDF2 is meant to be slow — that is the whole of its defence for a password
+   short enough to say out loud — so a derived key is made once and kept for the
+   session rather than recomputed on every push or poll. */
+function deriveKey(pass, salt){
+  return crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey'])
+    .then(k => crypto.subtle.deriveKey(
+      {name:'PBKDF2', salt, iterations:150000, hash:'SHA-256'},
+      k, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']));
+}
+
+/* What sits in the row's `state` column: {v:2, salt, iv, ct}. A fresh iv every
+   single time — reusing one under the same key is what breaks GCM. */
+function seal(key, saltB64, text){
+  const iv = rand(12);
+  return crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(text))
+    .then(ct => JSON.stringify({v:2, salt:saltB64, iv:b64(iv), ct:b64(ct)}));
+}
+function unseal(key, env){
+  return crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(env.iv)}, key, unb64(env.ct))
+    .then(buf => dec.decode(buf));
+}
+
+/* Null for anything that isn't an envelope — which covers both a row written
+   before passwords existed (bare JSON, still perfectly readable) and a row
+   that is simply garbage. Neither should throw inside a poll. */
+function envelope(raw){
+  try{ const o = JSON.parse(raw); return (o && o.v === 2 && o.ct && o.iv && o.salt) ? o : null; }
+  catch(e){ return null; }
+}
+
+/* Suggested rather than imposed: the host can type anything, but a password
+   nobody can be bothered to invent is a password that ends up being "1234".
+   Two words off the board, which is the same trick the four-digit code plays —
+   short enough to read out once and have everyone get it. */
+const PASSWORDS = ['aisle','runway','tarmac','hangar','jetway','beacon','compass','cargo',
+  'window','galley','tower','carousel','shuttle','layover','redeye','upgrade',
+  'atlas','harbor','canyon','prairie','summit','bayou','delta','skyline'];
+function makePass(){
+  const pick = () => PASSWORDS[Math.floor(Math.random()*PASSWORDS.length)];
+  let a = pick(), b = pick();
+  while(b === a) b = pick();
+  return a + '-' + b;
+}
+
 /* ---------- host ---------- */
 
 /* Four digits — short enough to say once and have everyone get it. */
@@ -1435,24 +1508,42 @@ function makeCode(){
   return String(Math.floor(Math.random()*10000)).padStart(4,'0');
 }
 
+/* Held for the session. The password itself lives in G, and so in localStorage
+   with the rest of the game — this is the host's own phone, where the game is
+   already sitting there in plain text, and it is what lets them reload mid-game
+   without being asked again. The key can't be stored, so it is re-derived. */
+let shareKey = null;
+function hostKey(s){
+  if(shareKey) return Promise.resolve(shareKey);
+  return deriveKey(s.pass, unb64(s.salt)).then(k => (shareKey = k));
+}
+
 /* Only 10,000 codes, so retry harder than the collision rate alone would need —
    finished games stay in the database and keep their code taken. If the check
    itself fails we take the code anyway: being offline shouldn't block sharing. */
-function startShare(){
+function startShare(pass){
+  const salt = rand(16), saltB64 = b64(salt);
   let code = makeCode(), tries = 0;
   const claim = () => sbGet(sbRow(code,'code')).catch(()=>[])
     .then(rows => {
       if(rows.length && ++tries < 12){ code = makeCode(); return claim(); }
-      G.share = {code, on:true};
-      shareErr = false; shareAt = 0;
-      save();
-      render();
+      /* A salt per share session, not per game: the key is derived once off it
+         and reused, so starting sharing again gives watchers a new one to
+         re-derive against — which is what makes a changed password stick. */
+      return deriveKey(pass, salt).then(k => {
+        shareKey = k;
+        G.share = {code, on:true, pass, salt:saltB64};
+        shareErr = false; shareAt = 0;
+        save();
+        render();
+      });
     });
   return claim();
 }
 
 function stopShare(){
   if(G.share) G.share.on = false;
+  shareKey = null;
   clearTimeout(pushTimer);
   save();
 }
@@ -1468,21 +1559,28 @@ function pushShare(){
 
 function doPush(){
   const s = G && G.share;
-  if(!s || !s.on) return;
+  /* No password, no push. A game saved before passwords existed still carries
+     `on`, and the Share card puts it back at "start sharing" — until then it
+     stays put rather than going up in the clear. */
+  if(!s || !s.on || !s.pass || !s.salt) return;
   /* rev doubles as the change token viewers poll and the timestamp they show.
      Wall-clock rather than a counter, so it still climbs after a page reload. */
   const now = Date.now();
   /* An upsert: first push for a code creates the row, every one after overwrites
      it. `return=minimal` because the row we just sent is no use coming back. */
-  fetch(SYNC_URL + '/rest/v1/games', {
-    method:'POST',
-    headers: sbHead({'Content-Type':'application/json',
-                     Prefer:'resolution=merge-duplicates,return=minimal'}),
-    body: JSON.stringify({code:s.code, rev:now, t:now, state:shareState()}),
-  })
-  .then(r => { shareErr = !r.ok; if(r.ok) shareAt = now; })
-  .catch(() => { shareErr = true; })
-  .then(paintSync);
+  hostKey(s)
+    .then(key => seal(key, s.salt, shareState()))
+    .then(state => fetch(SYNC_URL + '/rest/v1/games', {
+      method:'POST',
+      headers: sbHead({'Content-Type':'application/json',
+                       Prefer:'resolution=merge-duplicates,return=minimal'}),
+      body: JSON.stringify({code:s.code, rev:now, t:now, state}),
+    }))
+    // A crypto failure lands here too, and says the same thing a lost connection
+    // does: what's on screen is right, what's out there may be behind.
+    .then(r => { shareErr = !r.ok; if(r.ok) shareAt = now; })
+    .catch(() => { shareErr = true; })
+    .then(paintSync);
 }
 
 /* ---------- viewer ---------- */
@@ -1490,6 +1588,19 @@ function doPush(){
 let pollTimer = null, seenRev = 0;
 const pollOff = () => { clearInterval(pollTimer); pollTimer = null; };
 const pollOn  = () => { pollOff(); pollTimer = setInterval(pollShare, 4000); };
+
+/* The spectator's half of the key: the password they typed, the salt it was
+   derived against, and the key itself. All three, because the host restarting
+   sharing changes the salt and the same password has to be put through again. */
+let viewKey = null, viewSalt = '', viewPass = '';
+
+/* Remembered per code, so the poll loop, a reload, and the hashchange reload
+   that opening the same link twice causes don't all ask again. Their own phone,
+   their own password — the same place the host's game already lives. */
+const passSlot = code => 'frequentFlyer.watch.' + code;
+const passLoad = code => { try{ return localStorage.getItem(passSlot(code)) || ''; }catch(e){ return ''; } };
+const passSave = (code,p) => { try{ localStorage.setItem(passSlot(code), p); }catch(e){} };
+const passDrop = code => { try{ localStorage.removeItem(passSlot(code)); }catch(e){} };
 
 function bootView(code){
   VIEW = true;
@@ -1500,21 +1611,76 @@ function bootView(code){
     if(document.hidden) pollOff();
     else if(G){ pollOn(); pollShare(); }
   });
-  pullShare().then(ok => { if(ok) pollOn(); });
+  // Try what we were given last time before putting a password box in the way.
+  pullShare(passLoad(code)).then(ok => { if(ok) pollOn(); });
 }
 
-function pullShare(){
+function viewerKey(env, cand){
+  const pass = cand || viewPass;
+  if(!pass) return Promise.resolve(null);
+  if(viewKey && pass === viewPass && env.salt === viewSalt) return Promise.resolve(viewKey);
+  return deriveKey(pass, unb64(env.salt)).then(k => {
+    viewKey = k; viewSalt = env.salt; viewPass = pass;
+    return k;
+  });
+}
+
+/* The one road from a fetched row to something on screen, taken by the first
+   pull and by every poll that finds a change — so "we can't read this" is
+   handled once. Resolves true if the game is now up. */
+function showState(raw, rev, t, cand, keepScroll){
+  const paint = json => {
+    seenRev = rev; viewAt = t; viewErr = false;
+    G = hydrateShare(json);
+    UI.viewErr = null; UI.passErr = null; UI.screen = 'turn';
+    // Re-rendering scrolls to the top; a spectator mid-way down the history
+    // did not ask to be yanked back up there.
+    const y = window.scrollY;
+    render();
+    if(keepScroll) window.scrollTo(0, y);
+    return true;
+  };
+  const lock = wrong => {
+    UI.screen = 'viewpass'; UI.passErr = !!wrong; render();
+    return false;
+  };
+
+  const env = envelope(raw);
+  if(!env) return Promise.resolve(paint(raw));   // written before passwords existed
+
+  return viewerKey(env, cand).then(key => {
+    if(!key) return lock(false);
+    return unseal(key, env).then(paint).catch(() => {
+      // Either the password is wrong or the host has changed it. Same answer
+      // either way: forget it and ask.
+      viewKey = null; viewSalt = ''; viewPass = '';
+      passDrop(UI.code);
+      return lock(true);
+    });
+  });
+}
+
+function pullShare(cand){
   return sbGet(sbRow(UI.code, 'rev,t,state'))
     .then(rows => {
       const d = rows[0];
       if(!d || !d.state){ UI.viewErr = 'notfound'; render(); return false; }
-      seenRev = Number(d.rev) || 0; viewAt = Number(d.t) || 0; viewErr = false;
-      G = hydrateShare(d.state);
-      UI.viewErr = null; UI.screen = 'turn';
-      render();
-      return true;
+      return showState(d.state, Number(d.rev)||0, Number(d.t)||0, cand, false);
     })
     .catch(() => { UI.viewErr = 'offline'; render(); return false; });
+}
+
+/* Typed on the password screen, or retried from there after a failure. */
+function unlockView(pass){
+  pass = (pass || '').trim();
+  if(!pass) return Promise.resolve(false);
+  UI.passErr = null; UI.passBusy = true; render();
+  return pullShare(pass).then(ok => {
+    UI.passBusy = false;
+    if(ok){ passSave(UI.code, viewPass); pollOn(); }
+    else render();
+    return ok;
+  });
 }
 
 /* Poll the tiny `rev` number, not the whole game — the state only comes down
@@ -1525,16 +1691,14 @@ function pollShare(){
     viewErr = false;
     const rev = rows[0] ? Number(rows[0].rev) : 0;
     if(rev && rev !== seenRev){
-      seenRev = rev;
       return sbGet(sbRow(UI.code,'state')).then(rows2 => {
         const s = rows2[0] && rows2[0].state;
         if(!s) return;
-        G = hydrateShare(s); viewAt = rev;
-        // Re-rendering scrolls to the top; a spectator mid-way down the history
-        // did not ask to be yanked back up there.
-        const y = window.scrollY;
-        render();
-        window.scrollTo(0, y);
+        /* `seenRev` only moves inside showState, on a state we could actually
+           read — otherwise a payload we can't open would be marked seen and the
+           next poll would skip straight past it. Stop polling if it locks: the
+           password screen is what asks for the way back in. */
+        return showState(s, rev, rev, null, true).then(ok => { if(!ok) pollOff(); });
       });
     }
     paintSync();
@@ -1906,7 +2070,13 @@ function screenWin(){
       .map((p,i)=>playerRow(p, G.players.indexOf(p), p.id===G.winner)).join('') + '</div>';
   h += '<button class="btn" data-act="recap">See the recap' +
     '<span class="sub">How the game was won</span></button>';
-  h += '<button class="btn primary big" data-act="newconfirm">Start a new game</button>';
+  /* The likeliest next thing at a table that just finished a game is the same
+     table playing another one, so that is the button with the weight on it —
+     and it keeps the names and home cities rather than asking for them twice. */
+  h += '<button class="btn primary big" data-act="rematch">Play again — same players' +
+    '<span class="sub">Re-roll for play order and go</span></button>';
+  h += '<button class="btn" data-act="newconfirm">Start a new game' +
+    '<span class="sub">Different players or home cities</span></button>';
   h += '<button class="btn ghost" data-act="unwin">Keep playing (undo win)</button>';
   return h;
 }
@@ -2361,14 +2531,30 @@ function ago(t){
 function shareCard(){
   if(VIEW || !syncOn() || !G) return '';
   const s = G.share;
-  if(!s || !s.on) return '<div class="card"><h3 class="sechd">Share this game</h3>' +
-    '<p class="tiny muted" style="margin:2px 0 12px">Everyone else gets a link and follows the ' +
-    'scores on their own phone, updating as you play. They can watch, not touch.</p>' +
-    '<button class="btn primary" data-act="sharestart">Start sharing</button></div>';
+  /* A share missing its password is one saved before passwords existed. It never
+     pushes (doPush refuses), so it is offered here as one that hasn't started —
+     which is the truth of it. */
+  if(!s || !s.on || !s.pass){
+    // Suggested once per render of this card, and only while it is still a
+    // suggestion — retyping the box on every keystroke would be unusable.
+    if(UI.tmp.pass === undefined) UI.tmp.pass = makePass();
+    return '<div class="card"><h3 class="sechd">Share this game</h3>' +
+      '<p class="tiny muted" style="margin:2px 0 12px">Everyone else gets a link and follows the ' +
+      'scores on their own phone, updating as you play. They can watch, not touch.</p>' +
+      '<label class="fld"><span>Password</span>' +
+      '<input type="text" data-in="pass" value="'+esc(UI.tmp.pass)+'" autocomplete="off" ' +
+        'autocapitalize="none" spellcheck="false"></label>' +
+      '<p class="tiny muted" style="margin:-6px 0 12px">The game is scrambled before it leaves this ' +
+      'phone, and this is the only thing that unscrambles it — so the code on its own gets nobody in. ' +
+      'Change it to anything you like.</p>' +
+      '<button class="btn primary" data-act="sharestart">Start sharing</button></div>';
+  }
 
   return '<div class="card"><h3 class="sechd">Sharing live</h3>' +
     '<div class="codebig">'+esc(s.code)+'</div>' +
-    '<p class="tiny muted center" style="margin:0 0 12px">Read that out, or send the link.</p>' +
+    '<div class="passbig">'+esc(s.pass)+'</div>' +
+    '<p class="tiny muted center" style="margin:0 0 12px">Read both out. The link carries the code — ' +
+    'the password never travels with it, so say that part yourself.</p>' +
     '<div id="syncState">'+syncStatus()+'</div>' +
     '<div class="btn-row">' +
       '<button class="btn" data-act="sharecopy" style="text-align:center">' +
@@ -2395,6 +2581,7 @@ function viewStatus(){
   // Don't claim to be watching a game we never found.
   if(UI.viewErr === 'notfound') return 'No such game';
   if(UI.viewErr === 'offline')  return 'Can\'t connect';
+  if(UI.screen === 'viewpass')  return 'Locked';
   if(!G)      return 'Connecting…';
   if(viewErr) return 'Reconnecting…';
   return 'Watching · updated ' + (viewAt ? ago(viewAt) : 'just now');
@@ -2424,12 +2611,32 @@ function screenViewLoading(){
   return h;
 }
 
+/* The game came down scrambled and we have nothing that opens it. Nothing is
+   checked against a server here — the password either decrypts the payload or
+   it doesn't, and that is the whole of the test. */
+function screenViewPass(){
+  const busy = !!UI.passBusy;
+  let h = '<div style="height:26px"></div><div class="hero">' + logo(92) + '</div>';
+  h += '<div class="card"><h3>Game '+esc(UI.code||'')+' is password protected</h3>' +
+    '<p class="tiny muted" style="margin:8px 0 14px">Whoever is keeping score has it on their ' +
+    'screen — ask them to read it out.</p>' +
+    (UI.passErr ? '<div class="sync bad">'+ico('warn')+' That password doesn\'t open this game. ' +
+      'Check it and try again.</div>' : '') +
+    '<label class="fld"><input type="password" data-in="pass" value="'+esc(UI.tmp.pass||'')+'" ' +
+      'placeholder="Password" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' +
+    '<button class="btn primary" data-act="viewunlock"'+(busy?' disabled':'')+'>' +
+      (busy ? 'Unlocking…' : 'Watch this game') + '</button>' +
+    '<button class="btn ghost" data-act="leaveview">Back to my own game</button></div>';
+  return h;
+}
+
 /* ==========================================================================
    Router
    ========================================================================== */
 function render(){
   let h = '';
   if(UI.screen === 'loading')     h = screenViewLoading();
+  else if(UI.screen === 'viewpass') h = screenViewPass();
   else if(UI.screen === 'start')  h = screenStart();
   else if(UI.screen === 'count')  h = screenCount();
   // The city picker is a sub-screen of the turn flow everywhere else, but the
@@ -2463,7 +2670,7 @@ function render(){
    Events
    ========================================================================== */
 
-const VIEW_ACTS = ['nav','player','recap','back','leaveview','retryview'];
+const VIEW_ACTS = ['nav','player','recap','back','leaveview','retryview','viewunlock'];
 
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
@@ -2486,6 +2693,18 @@ app.addEventListener('click', e => {
     case 'newconfirm':
       if(confirm('Start a new game? The current game will be erased.')){ wipe(); G=null; go('start'); }
       break;
+
+    /* Same table, next game. Rather than a second setup path this fills in what
+       the wizard would have collected and drops in at its last step — play order
+       is a die roll, so it is the one thing that genuinely has to be asked
+       again. Backing out from there lands on the prefilled names-and-homes
+       screen, which is where you go to swap one city. */
+    case 'rematch': {
+      const data = G.players.map(p => ({name:p.name, home:p.home}));
+      UI.tmp = {count:data.length, data, target:G.target, order:[], share:G.share};
+      UI.screen = 'order'; UI.sub = null; render();
+      break;
+    }
 
     case 'resume':
       G = load(); go('turn'); break;
@@ -2526,6 +2745,10 @@ app.addEventListener('click', e => {
         return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home);
       });
       G = newGame(players, UI.tmp.target);
+      /* A rematch keeps the code and password the table is already watching, so
+         the first save() pushes the new game where the old one was. Without
+         this, newGame quietly orphans the share everyone has open. */
+      if(UI.tmp.share) G.share = UI.tmp.share;
       save(); go('turn');
       break;
     }
@@ -2546,8 +2769,17 @@ app.addEventListener('click', e => {
       UI.screen = 'recap'; UI.sub = null; render(); break;
 
     /* --- sharing --- */
-    case 'sharestart': startShare(); break;
+    /* Four characters is not a security bar, it is a typo bar — the real floor
+       is that the password is the only way in, which the card says. */
+    case 'sharestart': {
+      const p = (UI.tmp.pass || '').trim();
+      if(p.length < 4){ alert('Give the game a password of at least four characters.'); return; }
+      startShare(p);
+      break;
+    }
     case 'sharestop':  stopShare(); render(); break;
+
+    case 'viewunlock': unlockView(UI.tmp.pass); break;
 
     case 'sharecopy': {
       const url = gameUrl(G.share.code);
@@ -2719,6 +2951,16 @@ app.addEventListener('input', e => {
     const box = app.querySelector('.list');
     if(box) box.innerHTML = cityRows(cityMatches());
   }
+});
+
+/* A lone password box with a button under it is a form in every way except the
+   tag, and a phone keyboard's Go key should do what it looks like it does. */
+app.addEventListener('keydown', e => {
+  if(e.key !== 'Enter' || !e.target.dataset || e.target.dataset.in !== 'pass') return;
+  e.preventDefault();
+  if(UI.screen === 'viewpass') return unlockView(UI.tmp.pass);
+  const start = app.querySelector('[data-act="sharestart"]');
+  if(start && !VIEW) start.click();
 });
 
 /* Search box filters as you type without losing focus. */

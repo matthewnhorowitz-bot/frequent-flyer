@@ -1,0 +1,817 @@
+<script>
+/* ==========================================================================
+   State + engine
+   ========================================================================== */
+
+const KEY = 'frequentFlyer.game.v1';
+let G = null;          // game state
+let UI = {screen:'start', sub:null, tmp:{}};
+
+/* Spectator mode. Set once at boot and never cleared — a viewer writes nothing,
+   anywhere, so their own saved game survives opening someone else's link. */
+let VIEW = false;
+
+const fmt = n => n.toLocaleString('en-US');
+const uid = () => Math.random().toString(36).slice(2,9);
+
+function newPlayer(name, home){
+  return {
+    id: uid(), name, home, at: home,
+    miles: START_MILES,
+    visited: [home],
+    hand: [],            // card ids held
+    skip: 0,             // turns to miss
+    firstClass: false,   // for the flight in progress
+    mult: 1,             // multiplier armed for the next completed flight
+  };
+}
+
+function newGame(players, target){
+  return {
+    v: 1,
+    players, target,
+    turn: 0,             // index into players
+    started: Date.now(),
+    status: 'playing',
+    winner: null,
+    bounties: [],        // {city, amount, from}
+    log: [],             // {id, t, who, text, detail, undo}
+  };
+}
+
+/* ---------- persistence ----------
+   The one place the game is written down, which makes it the one place live
+   sharing has to hook into. */
+function save(){
+  if(VIEW) return;
+  try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){}
+  if(G && G.share && G.share.on) pushShare();
+}
+function load(){ try{ const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function wipe(){ try{ localStorage.removeItem(KEY); }catch(e){} }
+
+/* ---------- helpers ---------- */
+const cur = () => G.players[G.turn];
+const byId = id => G.players.find(p=>p.id===id);
+const opponents = p => G.players.filter(x=>x.id!==p.id);
+/* The 40-city game is the 20-city board played to two visits per city, in any
+   order — you may hit the same city twice before touching the others. So
+   `visited` is a list that may hold a city twice, not a set. */
+const maxVisits    = () => G.target > CITIES.length ? 2 : 1;
+const visitCount   = (p,c) => p.visited.reduce((n,x)=>n+(x===c?1:0), 0);
+const visitedCount = p => p.visited.length;
+const canVisit     = (p,c) => visitCount(p,c) < maxVisits();
+const stopWord     = () => maxVisits() > 1 ? 'stops' : 'cities';
+
+/* "Have they been here at all?" — this is what card conditions mean by
+   visited, so it stays a yes/no even when two visits are allowed. */
+const hasVisited = (p,c) => visitCount(p,c) > 0;
+
+/* Snapshot just the mutable player fields + bounties, for undo. */
+function snapshot(){
+  return JSON.stringify({p:G.players, b:G.bounties, t:G.turn, s:G.status, w:G.winner});
+}
+function restore(snap){
+  const o = JSON.parse(snap);
+  G.players = o.p; G.bounties = o.b; G.turn = o.t; G.status = o.s; G.winner = o.w;
+}
+
+/* Every mutation goes through this so undo and the log stay in sync. */
+function commit(text, detail, mutate){
+  const before = snapshot();
+  mutate();
+  G.log.unshift({id:uid(), t:Date.now(), who:cur().name, text, detail:detail||'', undo:before});
+  checkWin();
+  save();
+}
+
+function undoLast(){
+  const e = G.log.shift();
+  if(!e) return;
+  restore(e.undo);
+  save();
+}
+
+/* ---------- win condition ----------
+   Rules: visit the target number of cities (home counts as the first),
+   then return to your home city. */
+function checkWin(){
+  if(G.status !== 'playing') return;
+  for(const p of G.players){
+    if(visitedCount(p) >= G.target && p.at === p.home && G.log.length > 0){
+      G.status = 'finished'; G.winner = p.id; return;
+    }
+  }
+}
+
+/* ---------- core mutations ---------- */
+
+function addMiles(p, amount){ p.miles += amount; }
+
+/* Land a player in a city: check it off, move them, optionally pay mileage.
+   Returns {earned, bonus} for logging. */
+function land(p, to, earn, useMult){
+  const from = p.at;
+  let earned = 0;
+  if(earn && from && from !== to){
+    earned = milesBetween(from, to);
+    if(useMult && p.mult > 1) earned *= p.mult;
+  }
+  p.miles += earned;
+  p.at = to;
+  if(canVisit(p,to)) p.visited.push(to);
+  if(useMult) p.mult = 1;
+  p.firstClass = false;              // the flight is over
+
+  // Any bounty sitting on this city pays out now.
+  let bonus = 0;
+  G.bounties = G.bounties.filter(b=>{
+    if(b.city === to){ p.miles += b.amount; bonus += b.amount; return false; }
+    return true;
+  });
+  return {earned, bonus};
+}
+
+function advanceTurn(){
+  if(G.status !== 'playing') return;
+  let guard = 0;
+  do {
+    G.turn = (G.turn + 1) % G.players.length;
+    guard++;
+    if(cur().skip > 0){ cur().skip--; } else break;
+  } while(guard < 40);
+}
+
+/* ---------- card effects ----------
+   `ans` carries any answers the card needed: {city, oppId, oppCity, cardId, branch} */
+
+function cardNeeds(fx){
+  const need = [];
+  if(fx.choice) need.push('branch');
+  if(fx.fly === 'choose') need.push('city');
+  if(Array.isArray(fx.fly)) need.push('cityFrom');
+  if(fx.addCity === 'choose') need.push('city');
+  if(fx.oppFly) need.push('opp');
+  if(fx.skipOpp) need.push('opp');
+  if(fx.stealCity) need.push('stealCity');
+  if(fx.stealCard) need.push('stealCard');
+  return need;
+}
+
+/* Resolve a branch choice down to the concrete fx before applying. */
+function resolveFx(card, ans){
+  let fx = card.fx;
+  if(fx.choice && ans.branch != null) fx = fx.choice[ans.branch].fx;
+  return fx;
+}
+
+function applyFx(p, fx, ans, notes){
+  // straight mileage
+  if(fx.miles) { addMiles(p, fx.miles); notes.push((fx.miles>0?'+':'')+fmt(fx.miles)+' miles'); }
+
+  // conditional bonus on cities already visited
+  if(fx.milesIf){
+    const {cities, mode, amount} = fx.milesIf;
+    const ok = mode === 'all'  ? cities.every(c=>hasVisited(p,c))
+             : mode === 'none' ? cities.every(c=>!hasVisited(p,c))
+             :                   cities.some(c=>hasVisited(p,c));
+    if(ok){ addMiles(p, amount); notes.push('+'+fmt(amount)+' miles (condition met)'); }
+    else  { notes.push('No bonus — condition not met'); }
+  }
+
+  // collect from every opponent
+  if(fx.collectEach){
+    let got = 0;
+    opponents(p).forEach(o=>{ o.miles -= fx.collectEach; got += fx.collectEach; });
+    addMiles(p, got);
+    notes.push('+'+fmt(got)+' miles collected from '+opponents(p).length+' player(s)');
+  }
+
+  // arm a mileage multiplier
+  if(fx.multiplier){ p.mult = fx.multiplier; notes.push(fx.multiplier+'× mileage armed for your next flight'); }
+
+  // travel class
+  if(fx.firstClass === true){ p.firstClass = true; notes.push('Now flying first class'); }
+  if(fx.firstClass === false){ p.firstClass = false; notes.push('Back in coach'); }
+
+  // turn skipping
+  if(fx.skipSelf){ p.skip += fx.skipSelf; notes.push('Missing next '+fx.skipSelf+' turn(s)'); }
+  if(fx.skipOpp && ans.oppId){
+    const o = byId(ans.oppId); o.skip += fx.skipOpp;
+    notes.push(o.name+' misses their next turn');
+  }
+
+  // add a city without flying there
+  if(fx.addCity === 'choose' && ans.city){
+    if(canVisit(p, ans.city)) p.visited.push(ans.city);
+    notes.push(cityName(ans.city)+' added to your checklist');
+  }
+
+  // steal a city from an opponent
+  if(fx.stealCity && ans.oppId && ans.oppCity){
+    const o = byId(ans.oppId);
+    const k = o.visited.indexOf(ans.oppCity);   // one visit, not all of them
+    if(k >= 0) o.visited.splice(k, 1);
+    if(canVisit(p, ans.oppCity)) p.visited.push(ans.oppCity);
+    notes.push('Took '+cityName(ans.oppCity)+' from '+o.name);
+  }
+
+  // steal a held card
+  if(fx.stealCard && ans.oppId && ans.cardId){
+    const o = byId(ans.oppId);
+    o.hand = o.hand.filter(c=>c!==ans.cardId);
+    p.hand.push(ans.cardId);
+    notes.push('Took "'+CARDS_BY_ID[ans.cardId].title+'" from '+o.name);
+  }
+
+  // force an opponent to fly somewhere (no miles for them)
+  if(fx.oppFly && ans.oppId){
+    const o = byId(ans.oppId);
+    land(o, fx.oppFly, false, false);
+    notes.push(o.name+' forced to '+cityName(fx.oppFly)+' (no miles)');
+  }
+
+  // place a bounty on a city
+  if(fx.bounty){
+    G.bounties.push({city:fx.bounty.city, amount:fx.bounty.amount, from:p.name});
+    notes.push(fmt(fx.bounty.amount)+' miles now waiting in '+cityName(fx.bounty.city));
+  }
+
+  // relocate the player
+  let dest = null;
+  if(fx.flyIfNot){ if(!hasVisited(p, fx.flyIfNot)) dest = fx.flyIfNot; else notes.push(fx.flyIfNotElse||'Condition not met.'); }
+  else if(fx.fly === 'home') dest = p.home;
+  else if(fx.fly === 'choose' || Array.isArray(fx.fly)) dest = ans.city;
+  else if(typeof fx.fly === 'string') dest = fx.fly;
+
+  if(dest){
+    const already = hasVisited(p, dest);
+    const r = land(p, dest, !!fx.flyEarns, true);
+    notes.push('Flew to '+cityName(dest)+(r.earned?' (+'+fmt(r.earned)+' miles)':' (no miles)'));
+    if(r.bonus) notes.push('+'+fmt(r.bonus)+' bounty collected');
+    if(fx.bonusIfVisited && already && fx.bonusIfVisited.city === dest){
+      addMiles(p, fx.bonusIfVisited.amount);
+      notes.push('+'+fmt(fx.bonusIfVisited.amount)+' bonus (already visited)');
+    }
+  }
+}
+
+function playCard(card, ans){
+  const p = cur();
+  const fx = resolveFx(card, ans);
+  const notes = [];
+  const holding = fx.hold && !ans.fromHand;
+
+  commit(card.title, '', ()=>{
+    if(holding){
+      p.hand.push(card.id);
+      notes.push('Saved to your hand');
+    } else {
+      applyFx(p, fx, ans, notes);
+      if(ans.fromHand) p.hand = p.hand.filter(c=>c!==card.id);
+    }
+  });
+  G.log[0].detail = notes.join(' · ') || (fx.note || 'No scoring change');
+  save();
+  return notes;
+}
+
+/* ---------- flights & redemptions ---------- */
+
+function completeFlight(from, to, earns){
+  const p = cur();
+  let r;
+  commit('Flight', '', ()=>{
+    p.at = from;
+    r = land(p, to, earns, true);
+  });
+  const bits = [cityName(from)+' → '+cityName(to)];
+  if(earns) bits.push('+'+fmt(r.earned)+' miles'); else bits.push('no miles earned');
+  if(r.bonus) bits.push('+'+fmt(r.bonus)+' bounty');
+  G.log[0].detail = bits.join(' · ');
+  save();
+}
+
+function redeem(kind, city){
+  const p = cur();
+  if(kind === 'choose'){
+    commit('Redeemed 5,000 miles', 'Choose your destination instead of rolling', ()=>{ p.miles -= REDEEM.CHOOSE; });
+  } else if(kind === 'first'){
+    commit('Redeemed 10,000 miles', 'First class upgrade for this flight', ()=>{ p.miles -= REDEEM.FIRSTCLASS; p.firstClass = true; });
+  } else if(kind === 'auto'){
+    let r;
+    commit('Redeemed 20,000 miles', '', ()=>{ p.miles -= REDEEM.AUTO; r = land(p, city, false, false); });
+    let d = 'Automatic flight to '+cityName(city)+' · no miles earned';
+    if(r.bonus) d += ' · +'+fmt(r.bonus)+' bounty';
+    G.log[0].detail = d;
+    save();
+  }
+}
+
+function adjustMiles(delta, why){
+  const p = cur();
+  commit('Manual adjustment', (delta>0?'+':'')+fmt(delta)+' miles'+(why?' — '+why:''), ()=>{ p.miles += delta; });
+}
+
+/* Tapping a city cycles its visit count: 0 → 1 → (→ 2) → 0. */
+function toggleCity(city){
+  const p = cur();
+  const max = maxVisits();
+  const next = (visitCount(p, city) + 1) % (max + 1);
+  const detail = cityName(city) + (max > 1 ? ' — now '+next+' of '+max+' visits' : '');
+  commit(next ? 'Checked off city' : 'Unchecked city', detail, ()=>{
+    p.visited = p.visited.filter(c=>c!==city);
+    for(let i=0;i<next;i++) p.visited.push(city);
+  });
+}
+
+function endTurn(){
+  commit('End of turn', '', ()=>{ advanceTurn(); });
+}
+
+/* Drawing a card or finishing a flight is the end of a turn, so do it for them
+   rather than making them tap End turn every single time. The banner that
+   follows names who just went and offers an undo, because occasionally the
+   turn wasn't over — see UI.flash in screenTurn(). */
+function autoEnd(what){
+  if(G.status !== 'playing'){ UI.flash = {text:what, ended:false}; return false; }
+  const who = cur().name;
+  endTurn();
+  UI.flash = {text:what, who, next:cur().name, ended:true};
+  return true;
+}
+
+/* ==========================================================================
+   Recap
+
+   commit() files a full snapshot of every player before it changes anything, so
+   the log is already a frame-by-frame recording of the game. Everything below
+   reads those snapshots and diffs neighbouring frames — never `e.text`, which
+   is display copy and free to be reworded.
+   ========================================================================== */
+
+/* The log is newest-first, so the state *after* entry i is entry i-1's
+   snapshot — or the live game, for the newest entry. Returned oldest first,
+   which is the order anything narrating the game wants to walk. */
+function frames(){
+  // A spectator's log arrives with the snapshots stripped, so there is
+  // nothing to replay. Callers fall back to the final standings.
+  if(!G.log.length || !G.log[0].undo) return [];
+  const out = [];
+  for(let i = G.log.length - 1; i >= 0; i--){
+    const b = JSON.parse(G.log[i].undo);
+    const a = i === 0 ? {p:G.players, t:G.turn} : JSON.parse(G.log[i-1].undo);
+    out.push({e:G.log[i], before:b.p, after:a.p, turnBefore:b.t, turnAfter:a.t});
+  }
+  return out;
+}
+
+/* Who is winning, or null while it's genuinely level. Cities first — they are
+   the win condition — then miles as the tie-break, which is how the standings
+   on the win screen are already sorted. */
+function leaderOf(list){
+  if(!list.length) return null;
+  let best = list[0];
+  list.forEach(p => {
+    if(p.visited.length > best.visited.length ||
+      (p.visited.length === best.visited.length && p.miles > best.miles)) best = p;
+  });
+  const level = list.filter(p => p.visited.length === best.visited.length &&
+                                 p.miles === best.miles);
+  return level.length === 1 ? best.id : null;
+}
+
+/* Players are matched by id throughout, never by name: two people at the table
+   may enter the same name, and plenty of cards move somebody other than whoever
+   is having the turn. */
+function recapStats(){
+  const fs = frames();
+  const by = {};
+  G.players.forEach(p => by[p.id] = {
+    p, turns:0, earned:0, redeemed:0, cities:visitedCount(p),
+    flights:0, haul:null, bestTurn:0,
+  });
+
+  const g = {
+    full: fs.length > 0,
+    rows: G.players.map(p => by[p.id]),
+    turns: 0, ms: 0, leadChanges: 0, turning: null, ledThroughout: false,
+    winner: G.winner ? byId(G.winner) : null,
+  };
+  if(!g.full) return g;
+
+  g.ms = G.log[0].t - G.log[G.log.length-1].t;
+
+  const running = {};                 // miles banked so far this turn
+  G.players.forEach(p => running[p.id] = 0);
+  const leads = [];                   // who led after each frame, null while level
+  const moved = [];                   // did this frame change anyone's position?
+  let lead = null;
+
+  fs.forEach(f => {
+    const post = {};
+    f.after.forEach(a => post[a.id] = a);
+    let material = false;
+
+    f.before.forEach(b => {
+      const a = post[b.id], s = by[b.id];
+      if(!a || !s) return;                       // player from an older save
+      const dm = a.miles - b.miles;
+      if(dm !== 0 || a.visited.length !== b.visited.length) material = true;
+      if(dm > 0) s.earned += dm; else if(dm < 0) s.redeemed -= dm;
+      running[b.id] += dm;
+      /* A flight is a move that ticked a city off — which is the definition
+         that survives redemptions, card moves and manual corrections alike. */
+      if(a.at !== b.at && a.visited.length > b.visited.length){
+        s.flights++;
+        if(dm > 0 && (!s.haul || dm > s.haul.miles))
+          s.haul = {miles:dm, from:b.at, to:a.at};
+      }
+    });
+
+    // The seat moving on is what ends a turn; bank what the outgoing player made.
+    if(f.turnBefore !== f.turnAfter){
+      const out = f.before[f.turnBefore];
+      const s = out && by[out.id];
+      if(s){
+        s.turns++;
+        s.bestTurn = Math.max(s.bestTurn, running[out.id]);
+        running[out.id] = 0;
+      }
+      g.turns++;
+    }
+
+    const now = leaderOf(f.after);
+    if(lead && now && now !== lead) g.leadChanges++;
+    lead = now;
+    leads.push(now);
+    moved.push(material);
+  });
+
+  /* The turning point is the last time somebody else was definitively ahead.
+     Finding it takes two steps, because the frame where the lead settles is
+     usually not the frame that settled it: a game sits level for a while
+     (leaderOf returns null through the tie) and the lead only reads as the
+     winner's again a few entries later, often on an End of turn. So find where
+     the lead comes back for good, then walk back to the last entry that
+     actually changed the board — the move deserves the credit, not the
+     bookkeeping that followed it. */
+  const champ = (g.winner && g.winner.id) || leaderOf(G.players);
+  if(champ){
+    let last = -1;
+    leads.forEach((id, i) => { if(id && id !== champ) last = i; });
+    if(last < 0){ g.ledThroughout = true; return g; }
+    let i = last + 1;
+    while(i < fs.length && leads[i] !== champ) i++;
+    if(i < fs.length){
+      while(i > 0 && !moved[i]) i--;
+      g.turning = fs[i];
+    }
+  }
+  return g;
+}
+
+/* ==========================================================================
+   Live sharing
+
+   One phone runs the game and pushes after every action; everyone else opens a
+   link and polls. It talks to a Supabase table over plain REST — no SDK, no
+   CDN script — so this stays one self-contained file.
+
+   Two rules hold the whole thing together:
+     · nothing happens until someone taps Start sharing, so a game that never
+       shares makes no network requests at all;
+     · every request is fire-and-forget. Losing signal must never cost a turn.
+   ========================================================================== */
+
+/* Both of these set = sharing is available. Either one blank and the app is
+   exactly as offline as it was before any of this existed.
+   The key is Supabase's publishable key, which belongs in a public page — the
+   table's row-level security is what actually decides who can do what. The
+   secret / service_role key must never appear here. */
+const SYNC_URL = 'https://mfjibppjqcodmrshfjbt.supabase.co';
+const SYNC_KEY = 'sb_publishable_BJ02mjBe1S6_56ZioeEC5g_RlDi7SFu';
+/* Hardcoded rather than read off location, so a link made from the Claude
+   artifact preview still points at the real site. */
+const SHARE_URL = 'https://matthewnhorowitz-bot.github.io/frequent-flyer/';
+
+/* Every payload is encrypted before it leaves the phone, so sharing is only
+   offered where the browser will actually do that — which is any secure context,
+   i.e. the real site and localhost, but not a file:// double-click. Somewhere
+   crypto.subtle is missing, the app is exactly as offline as a blank key makes
+   it, which is a failure mode the UI already handles. */
+const cryptoOn = () => !!(window.crypto && window.crypto.subtle);
+const syncOn  = () => !!(SYNC_URL && SYNC_KEY && cryptoOn());
+const gameUrl = code => SHARE_URL + '#' + code;
+
+/* One row per game, keyed by the four-digit code. `cols` keeps the reply down to
+   what's actually wanted — the poll asks for `rev` alone, three bytes of answer. */
+const sbRow  = (code, cols) => SYNC_URL + '/rest/v1/games?select=' + cols +
+  '&code=eq.' + encodeURIComponent(code);
+const sbHead = extra => Object.assign({apikey:SYNC_KEY, Authorization:'Bearer '+SYNC_KEY}, extra||{});
+
+/* A rejected request answers with an error object rather than a row array, so
+   turn anything that isn't a clean 2xx into a throw and let the caller treat it
+   as "couldn't reach it" — which is true, and is never "no such game". */
+function sbGet(url){
+  return fetch(url, {headers:sbHead()}).then(r => {
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(rows => Array.isArray(rows) ? rows : []);
+}
+
+let shareErr = false;   // the last push failed — the Share card says so instead of claiming live
+let shareAt  = 0;       // when the last push landed
+let viewErr  = false;   // a viewer's last poll failed
+let viewAt   = 0;       // the host's clock when the state we're showing was pushed
+
+/* ---------- what goes over the wire ----------
+   Every log entry carries a full player snapshot in `undo` for the undo stack.
+   That is most of G's bytes and is meaningless to someone watching, so it is
+   dropped — which also keeps a long game comfortably inside the size limit. */
+function shareState(){
+  return JSON.stringify({
+    v:1, target:G.target, turn:G.turn, status:G.status, winner:G.winner,
+    players:G.players, bounties:G.bounties,
+    log: G.log.slice(0,150).map(e=>({who:e.who, text:e.text, detail:e.detail, t:e.t})),
+  });
+}
+
+/* Rebuild something shaped exactly like G, so every existing screen renders a
+   watched game without knowing it is watching one. */
+function hydrateShare(raw){
+  const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return {
+    v:1, target:o.target||20, turn:o.turn||0, started:0,
+    status:o.status||'playing', winner:o.winner||null,
+    players:o.players||[], bounties:o.bounties||[],
+    log:(o.log||[]).map(e=>({id:uid(), t:e.t||0, who:e.who, text:e.text, detail:e.detail, undo:null})),
+  };
+}
+
+/* ---------- the password ----------
+
+   The code says which game. The password says whether you may read it — and it
+   does that by being the only thing that can decrypt the payload, not by being
+   checked anywhere. There are only 10,000 codes; anyone could walk all of them
+   in a minute. What they'd get is ciphertext.
+
+   Encryption protects reading, not writing: as far as this client knows, anyone
+   may still upsert to any code — whatever the table's row-level security allows.
+   A hostile overwrite is no more readable than anything else, though, so the
+   worst it does is send watchers back to the password screen. */
+
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64   = buf => btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+const unb64 = s   => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const rand  = n   => crypto.getRandomValues(new Uint8Array(n));
+
+/* PBKDF2 is meant to be slow — that is the whole of its defence for a password
+   short enough to say out loud — so a derived key is made once and kept for the
+   session rather than recomputed on every push or poll. */
+function deriveKey(pass, salt){
+  return crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey'])
+    .then(k => crypto.subtle.deriveKey(
+      {name:'PBKDF2', salt, iterations:150000, hash:'SHA-256'},
+      k, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']));
+}
+
+/* What sits in the row's `state` column: {v:2, salt, iv, ct}. A fresh iv every
+   single time — reusing one under the same key is what breaks GCM. */
+function seal(key, saltB64, text){
+  const iv = rand(12);
+  return crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc.encode(text))
+    .then(ct => JSON.stringify({v:2, salt:saltB64, iv:b64(iv), ct:b64(ct)}));
+}
+function unseal(key, env){
+  return crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(env.iv)}, key, unb64(env.ct))
+    .then(buf => dec.decode(buf));
+}
+
+/* Null for anything that isn't an envelope — which covers both a row written
+   before passwords existed (bare JSON, still perfectly readable) and a row
+   that is simply garbage. Neither should throw inside a poll. */
+function envelope(raw){
+  try{ const o = JSON.parse(raw); return (o && o.v === 2 && o.ct && o.iv && o.salt) ? o : null; }
+  catch(e){ return null; }
+}
+
+/* Suggested rather than imposed: the host can type anything, but a password
+   nobody can be bothered to invent is a password that ends up being "1234".
+   Two words off the board, which is the same trick the four-digit code plays —
+   short enough to read out once and have everyone get it. */
+const PASSWORDS = ['aisle','runway','tarmac','hangar','jetway','beacon','compass','cargo',
+  'window','galley','tower','carousel','shuttle','layover','redeye','upgrade',
+  'atlas','harbor','canyon','prairie','summit','bayou','delta','skyline'];
+function makePass(){
+  const pick = () => PASSWORDS[Math.floor(Math.random()*PASSWORDS.length)];
+  let a = pick(), b = pick();
+  while(b === a) b = pick();
+  return a + '-' + b;
+}
+
+/* ---------- host ---------- */
+
+/* Four digits — short enough to say once and have everyone get it. */
+const SHARE_CODE = /^\d{4}$/;
+function makeCode(){
+  return String(Math.floor(Math.random()*10000)).padStart(4,'0');
+}
+
+/* Held for the session. The password itself lives in G, and so in localStorage
+   with the rest of the game — this is the host's own phone, where the game is
+   already sitting there in plain text, and it is what lets them reload mid-game
+   without being asked again. The key can't be stored, so it is re-derived. */
+let shareKey = null;
+function hostKey(s){
+  if(shareKey) return Promise.resolve(shareKey);
+  return deriveKey(s.pass, unb64(s.salt)).then(k => (shareKey = k));
+}
+
+/* Only 10,000 codes, so retry harder than the collision rate alone would need —
+   finished games stay in the database and keep their code taken. If the check
+   itself fails we take the code anyway: being offline shouldn't block sharing. */
+function startShare(pass){
+  const salt = rand(16), saltB64 = b64(salt);
+  let code = makeCode(), tries = 0;
+  const claim = () => sbGet(sbRow(code,'code')).catch(()=>[])
+    .then(rows => {
+      if(rows.length && ++tries < 12){ code = makeCode(); return claim(); }
+      /* A salt per share session, not per game: the key is derived once off it
+         and reused, so starting sharing again gives watchers a new one to
+         re-derive against — which is what makes a changed password stick. */
+      return deriveKey(pass, salt).then(k => {
+        shareKey = k;
+        G.share = {code, on:true, pass, salt:saltB64};
+        shareErr = false; shareAt = 0;
+        save();
+        render();
+      });
+    });
+  return claim();
+}
+
+function stopShare(){
+  if(G.share) G.share.on = false;
+  shareKey = null;
+  clearTimeout(pushTimer);
+  save();
+}
+
+let pushTimer = null;
+/* One tap can produce several commits — a card effect, then the auto end of
+   turn — and only the last state is worth sending. */
+function pushShare(){
+  if(!syncOn()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(doPush, 600);
+}
+
+function doPush(){
+  const s = G && G.share;
+  /* No password, no push. A game saved before passwords existed still carries
+     `on`, and the Share card puts it back at "start sharing" — until then it
+     stays put rather than going up in the clear. */
+  if(!s || !s.on || !s.pass || !s.salt) return;
+  /* rev doubles as the change token viewers poll and the timestamp they show.
+     Wall-clock rather than a counter, so it still climbs after a page reload. */
+  const now = Date.now();
+  /* An upsert: first push for a code creates the row, every one after overwrites
+     it. `return=minimal` because the row we just sent is no use coming back. */
+  hostKey(s)
+    .then(key => seal(key, s.salt, shareState()))
+    .then(state => fetch(SYNC_URL + '/rest/v1/games', {
+      method:'POST',
+      headers: sbHead({'Content-Type':'application/json',
+                       Prefer:'resolution=merge-duplicates,return=minimal'}),
+      body: JSON.stringify({code:s.code, rev:now, t:now, state}),
+    }))
+    // A crypto failure lands here too, and says the same thing a lost connection
+    // does: what's on screen is right, what's out there may be behind.
+    .then(r => { shareErr = !r.ok; if(r.ok) shareAt = now; })
+    .catch(() => { shareErr = true; })
+    .then(paintSync);
+}
+
+/* ---------- viewer ---------- */
+
+let pollTimer = null, seenRev = 0;
+const pollOff = () => { clearInterval(pollTimer); pollTimer = null; };
+const pollOn  = () => { pollOff(); pollTimer = setInterval(pollShare, 4000); };
+
+/* The spectator's half of the key: the password they typed, the salt it was
+   derived against, and the key itself. All three, because the host restarting
+   sharing changes the salt and the same password has to be put through again. */
+let viewKey = null, viewSalt = '', viewPass = '';
+
+/* Remembered per code, so the poll loop, a reload, and the hashchange reload
+   that opening the same link twice causes don't all ask again. Their own phone,
+   their own password — the same place the host's game already lives. */
+const passSlot = code => 'frequentFlyer.watch.' + code;
+const passLoad = code => { try{ return localStorage.getItem(passSlot(code)) || ''; }catch(e){ return ''; } };
+const passSave = (code,p) => { try{ localStorage.setItem(passSlot(code), p); }catch(e){} };
+const passDrop = code => { try{ localStorage.removeItem(passSlot(code)); }catch(e){} };
+
+function bootView(code){
+  VIEW = true;
+  UI = {screen:'loading', sub:null, tmp:{}, code};
+  render();
+  document.addEventListener('visibilitychange', ()=>{
+    // A backgrounded phone shouldn't sit there burning data.
+    if(document.hidden) pollOff();
+    else if(G){ pollOn(); pollShare(); }
+  });
+  // Try what we were given last time before putting a password box in the way.
+  pullShare(passLoad(code)).then(ok => { if(ok) pollOn(); });
+}
+
+function viewerKey(env, cand){
+  const pass = cand || viewPass;
+  if(!pass) return Promise.resolve(null);
+  if(viewKey && pass === viewPass && env.salt === viewSalt) return Promise.resolve(viewKey);
+  return deriveKey(pass, unb64(env.salt)).then(k => {
+    viewKey = k; viewSalt = env.salt; viewPass = pass;
+    return k;
+  });
+}
+
+/* The one road from a fetched row to something on screen, taken by the first
+   pull and by every poll that finds a change — so "we can't read this" is
+   handled once. Resolves true if the game is now up. */
+function showState(raw, rev, t, cand, keepScroll){
+  const paint = json => {
+    seenRev = rev; viewAt = t; viewErr = false;
+    G = hydrateShare(json);
+    UI.viewErr = null; UI.passErr = null; UI.screen = 'turn';
+    // Re-rendering scrolls to the top; a spectator mid-way down the history
+    // did not ask to be yanked back up there.
+    const y = window.scrollY;
+    render();
+    if(keepScroll) window.scrollTo(0, y);
+    return true;
+  };
+  const lock = wrong => {
+    UI.screen = 'viewpass'; UI.passErr = !!wrong; render();
+    return false;
+  };
+
+  const env = envelope(raw);
+  if(!env) return Promise.resolve(paint(raw));   // written before passwords existed
+
+  return viewerKey(env, cand).then(key => {
+    if(!key) return lock(false);
+    return unseal(key, env).then(paint).catch(() => {
+      // Either the password is wrong or the host has changed it. Same answer
+      // either way: forget it and ask.
+      viewKey = null; viewSalt = ''; viewPass = '';
+      passDrop(UI.code);
+      return lock(true);
+    });
+  });
+}
+
+function pullShare(cand){
+  return sbGet(sbRow(UI.code, 'rev,t,state'))
+    .then(rows => {
+      const d = rows[0];
+      if(!d || !d.state){ UI.viewErr = 'notfound'; render(); return false; }
+      return showState(d.state, Number(d.rev)||0, Number(d.t)||0, cand, false);
+    })
+    .catch(() => { UI.viewErr = 'offline'; render(); return false; });
+}
+
+/* Typed on the password screen, or retried from there after a failure. */
+function unlockView(pass){
+  pass = (pass || '').trim();
+  if(!pass) return Promise.resolve(false);
+  UI.passErr = null; UI.passBusy = true; render();
+  return pullShare(pass).then(ok => {
+    UI.passBusy = false;
+    if(ok){ passSave(UI.code, viewPass); pollOn(); }
+    else render();
+    return ok;
+  });
+}
+
+/* Poll the tiny `rev` number, not the whole game — the state only comes down
+   when it has actually changed, which keeps a long session to a few hundred KB. */
+function pollShare(){
+  if(!UI.code) return;
+  sbGet(sbRow(UI.code,'rev')).then(rows => {
+    viewErr = false;
+    const rev = rows[0] ? Number(rows[0].rev) : 0;
+    if(rev && rev !== seenRev){
+      return sbGet(sbRow(UI.code,'state')).then(rows2 => {
+        const s = rows2[0] && rows2[0].state;
+        if(!s) return;
+        /* `seenRev` only moves inside showState, on a state we could actually
+           read — otherwise a payload we can't open would be marked seen and the
+           next poll would skip straight past it. Stop polling if it locks: the
+           password screen is what asks for the way back in. */
+        return showState(s, rev, rev, null, true).then(ok => { if(!ok) pollOff(); });
+      });
+    }
+    paintSync();
+  }).catch(() => { viewErr = true; paintSync(); });
+}
+</script>
