@@ -57,7 +57,9 @@ const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
    CARDS
    fx fields (all optional):
      miles          delta applied to the current player
-     milesIf        {cities:[], mode:'all'|'any'|'none', amount}
+     milesIf        {cities:[], mode:'all'|'any'|'none', amount, full}
+                    full — the cities must be visited as many times as the game
+                    length requires (twice in the 40-city game), not just once
      collectEach    each opponent pays the current player this amount
      fly            city id | 'choose' | 'home' | [ids]   (relocate + check off)
      flyEarns       whether that flight earns mileage
@@ -111,7 +113,7 @@ const CARDS = [
 {id:'C22',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
 {id:'C23',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
 {id:'C24',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
-{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000}}},
+{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000, full:true}}},
 {id:'C26',deck:'coach', title:'Emergency Landing', text:'Flight immediately cleared to land at nearest city from your current location on this turn. Collect miles from your departure city to the emergency city.', fx:{fly:'choose', flyEarns:true, note:'Land at the nearest city to your pawn.'}},
 {id:'C27',deck:'coach', title:'Grand Canyon', text:'If you have visited Phoenix, move forward 7 spaces, otherwise move backward 7 spaces.', fx:{note:'If Phoenix is checked off, move forward 7 spaces — otherwise move backward 7 spaces.'}},
 {id:'C28',deck:'coach', title:'Happy Birthday', text:'Receive 500 miles from every player on this turn.', fx:{collectEach:500}},

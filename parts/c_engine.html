@@ -14,11 +14,16 @@ let VIEW = false;
 const fmt = n => n.toLocaleString('en-US');
 const uid = () => Math.random().toString(36).slice(2,9);
 
-function newPlayer(name, home){
+/* `target` is passed in because the player exists before G does, and how many
+   times home is checked off depends on the game length. */
+function newPlayer(name, home, target){
   return {
     id: uid(), name, home, at: home,
     miles: START_MILES,
-    visited: [home],
+    /* Home is marked off in full at setup — once in the standard game, both
+       times in the 40-city game. Nobody spends a landing banking their own
+       home city's second visit. */
+    visited: Array(maxVisits(target)).fill(home),
     hand: [],            // card ids held
     skip: 0,             // turns to miss
     firstClass: false,   // for the flight in progress
@@ -57,7 +62,7 @@ const opponents = p => G.players.filter(x=>x.id!==p.id);
 /* The 40-city game is the 20-city board played to two visits per city, in any
    order — you may hit the same city twice before touching the others. So
    `visited` is a list that may hold a city twice, not a set. */
-const maxVisits    = () => G.target > CITIES.length ? 2 : 1;
+const maxVisits    = t => (t === undefined ? G.target : t) > CITIES.length ? 2 : 1;
 const visitCount   = (p,c) => p.visited.reduce((n,x)=>n+(x===c?1:0), 0);
 const visitedCount = p => p.visited.length;
 const canVisit     = (p,c) => visitCount(p,c) < maxVisits();
@@ -171,12 +176,18 @@ function applyFx(p, fx, ans, notes){
 
   // conditional bonus on cities already visited
   if(fx.milesIf){
-    const {cities, mode, amount} = fx.milesIf;
-    const ok = mode === 'all'  ? cities.every(c=>hasVisited(p,c))
-             : mode === 'none' ? cities.every(c=>!hasVisited(p,c))
-             :                   cities.some(c=>hasVisited(p,c));
+    const {cities, mode, amount, full} = fx.milesIf;
+    /* A `full` card wants every visit the game length asks for — Graceland
+       needs Memphis twice in the 40-city game — where the rest only ask
+       whether you have been there at all. */
+    const seen = full ? (c => visitCount(p,c) >= maxVisits()) : (c => hasVisited(p,c));
+    const ok = mode === 'all'  ? cities.every(c=>seen(c))
+             : mode === 'none' ? cities.every(c=>!seen(c))
+             :                   cities.some(c=>seen(c));
     if(ok){ addMiles(p, amount); notes.push('+'+fmt(amount)+' miles (condition met)'); }
-    else  { notes.push('No bonus — condition not met'); }
+    else  { notes.push(full && maxVisits() > 1
+              ? 'No bonus — needs '+maxVisits()+' visits to '+cities.map(c=>cityName(c)).join(' and ')
+              : 'No bonus — condition not met'); }
   }
 
   // collect from every opponent

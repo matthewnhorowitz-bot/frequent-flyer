@@ -75,7 +75,7 @@ app.addEventListener('click', e => {
     case 'startgame': {
       const players = UI.tmp.order.map(i=>{
         const p = UI.tmp.data[i];
-        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home);
+        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home, UI.tmp.target);
       });
       G = newGame(players, UI.tmp.target);
       /* A rematch keeps the code and password the table is already watching, so

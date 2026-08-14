@@ -778,7 +778,9 @@ const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
    CARDS
    fx fields (all optional):
      miles          delta applied to the current player
-     milesIf        {cities:[], mode:'all'|'any'|'none', amount}
+     milesIf        {cities:[], mode:'all'|'any'|'none', amount, full}
+                    full — the cities must be visited as many times as the game
+                    length requires (twice in the 40-city game), not just once
      collectEach    each opponent pays the current player this amount
      fly            city id | 'choose' | 'home' | [ids]   (relocate + check off)
      flyEarns       whether that flight earns mileage
@@ -832,7 +834,7 @@ const CARDS = [
 {id:'C22',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
 {id:'C23',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
 {id:'C24',deck:'coach', title:'Upgrade', text:'Free first class upgrade on the future flight of your choice.', footer:'Card may be saved', fx:UPG},
-{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000}}},
+{id:'C25',deck:'coach', title:'Graceland', text:'Earn a bonus of 5,000 miles if you have already visited Memphis on this turn.', fx:{milesIf:{cities:['MEM'], mode:'all', amount:5000, full:true}}},
 {id:'C26',deck:'coach', title:'Emergency Landing', text:'Flight immediately cleared to land at nearest city from your current location on this turn. Collect miles from your departure city to the emergency city.', fx:{fly:'choose', flyEarns:true, note:'Land at the nearest city to your pawn.'}},
 {id:'C27',deck:'coach', title:'Grand Canyon', text:'If you have visited Phoenix, move forward 7 spaces, otherwise move backward 7 spaces.', fx:{note:'If Phoenix is checked off, move forward 7 spaces — otherwise move backward 7 spaces.'}},
 {id:'C28',deck:'coach', title:'Happy Birthday', text:'Receive 500 miles from every player on this turn.', fx:{collectEach:500}},
@@ -904,11 +906,16 @@ let VIEW = false;
 const fmt = n => n.toLocaleString('en-US');
 const uid = () => Math.random().toString(36).slice(2,9);
 
-function newPlayer(name, home){
+/* `target` is passed in because the player exists before G does, and how many
+   times home is checked off depends on the game length. */
+function newPlayer(name, home, target){
   return {
     id: uid(), name, home, at: home,
     miles: START_MILES,
-    visited: [home],
+    /* Home is marked off in full at setup — once in the standard game, both
+       times in the 40-city game. Nobody spends a landing banking their own
+       home city's second visit. */
+    visited: Array(maxVisits(target)).fill(home),
     hand: [],            // card ids held
     skip: 0,             // turns to miss
     firstClass: false,   // for the flight in progress
@@ -947,7 +954,7 @@ const opponents = p => G.players.filter(x=>x.id!==p.id);
 /* The 40-city game is the 20-city board played to two visits per city, in any
    order — you may hit the same city twice before touching the others. So
    `visited` is a list that may hold a city twice, not a set. */
-const maxVisits    = () => G.target > CITIES.length ? 2 : 1;
+const maxVisits    = t => (t === undefined ? G.target : t) > CITIES.length ? 2 : 1;
 const visitCount   = (p,c) => p.visited.reduce((n,x)=>n+(x===c?1:0), 0);
 const visitedCount = p => p.visited.length;
 const canVisit     = (p,c) => visitCount(p,c) < maxVisits();
@@ -1061,12 +1068,18 @@ function applyFx(p, fx, ans, notes){
 
   // conditional bonus on cities already visited
   if(fx.milesIf){
-    const {cities, mode, amount} = fx.milesIf;
-    const ok = mode === 'all'  ? cities.every(c=>hasVisited(p,c))
-             : mode === 'none' ? cities.every(c=>!hasVisited(p,c))
-             :                   cities.some(c=>hasVisited(p,c));
+    const {cities, mode, amount, full} = fx.milesIf;
+    /* A `full` card wants every visit the game length asks for — Graceland
+       needs Memphis twice in the 40-city game — where the rest only ask
+       whether you have been there at all. */
+    const seen = full ? (c => visitCount(p,c) >= maxVisits()) : (c => hasVisited(p,c));
+    const ok = mode === 'all'  ? cities.every(c=>seen(c))
+             : mode === 'none' ? cities.every(c=>!seen(c))
+             :                   cities.some(c=>seen(c));
     if(ok){ addMiles(p, amount); notes.push('+'+fmt(amount)+' miles (condition met)'); }
-    else  { notes.push('No bonus — condition not met'); }
+    else  { notes.push(full && maxVisits() > 1
+              ? 'No bonus — needs '+maxVisits()+' visits to '+cities.map(c=>cityName(c)).join(' and ')
+              : 'No bonus — condition not met'); }
   }
 
   // collect from every opponent
@@ -2123,6 +2136,15 @@ function subCard(){
     '<div class="gx">'+esc(c.text)+'</div>' +
     (c.footer?'<div class="gf">'+esc(c.footer)+'</div>':'') + '</div>';
 
+  /* The card face is reproduced verbatim from the printed card, so where the
+     40-city game reads it differently that goes underneath rather than into
+     the text. */
+  if(c.fx.milesIf && c.fx.milesIf.full && maxVisits() > 1){
+    h += '<div class="banner">'+ico('target')+' Long game: this bonus needs ' +
+      maxVisits()+' visits to '+esc(c.fx.milesIf.cities.map(x=>cityName(x)).join(' and '))+
+      ', not one.</div>';
+  }
+
   const willHold = c.fx.hold && !fromHand;
   if(willHold){
     h += '<div class="banner">'+ico('ticket')+' This card is saved to '+esc(p.name)+'’s hand. Play it later from <b>Held cards</b>.</div>';
@@ -2742,7 +2764,7 @@ app.addEventListener('click', e => {
     case 'startgame': {
       const players = UI.tmp.order.map(i=>{
         const p = UI.tmp.data[i];
-        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home);
+        return newPlayer(p.name.trim() || ('Player '+(i+1)), p.home, UI.tmp.target);
       });
       G = newGame(players, UI.tmp.target);
       /* A rematch keeps the code and password the table is already watching, so

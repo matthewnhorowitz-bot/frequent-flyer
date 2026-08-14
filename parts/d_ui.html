@@ -416,6 +416,15 @@ function subCard(){
     '<div class="gx">'+esc(c.text)+'</div>' +
     (c.footer?'<div class="gf">'+esc(c.footer)+'</div>':'') + '</div>';
 
+  /* The card face is reproduced verbatim from the printed card, so where the
+     40-city game reads it differently that goes underneath rather than into
+     the text. */
+  if(c.fx.milesIf && c.fx.milesIf.full && maxVisits() > 1){
+    h += '<div class="banner">'+ico('target')+' Long game: this bonus needs ' +
+      maxVisits()+' visits to '+esc(c.fx.milesIf.cities.map(x=>cityName(x)).join(' and '))+
+      ', not one.</div>';
+  }
+
   const willHold = c.fx.hold && !fromHand;
   if(willHold){
     h += '<div class="banner">'+ico('ticket')+' This card is saved to '+esc(p.name)+'’s hand. Play it later from <b>Held cards</b>.</div>';
