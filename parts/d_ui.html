@@ -194,7 +194,9 @@ function screenSetup(){
 
   h += '<div class="card"><h3 style="font-size:16px">Game length</h3>' +
     '<p class="hint" style="margin:6px 0 12px">Reach this many stops, then fly home to win. ' +
-    'Your home city counts as your first.</p>' +
+    (maxVisits(target) > 1
+      ? 'Your home city is marked off twice from the start.'
+      : 'Your home city counts as your first.') + '</p>' +
     LENGTHS.map(o => '<button class="opt'+(target===o[0]?' on':'')+'" data-act="target" data-v="'+o[0]+'">' +
       '<span class="rd"></span><span><span class="ot">'+o[0]+' cities · '+o[1]+'</span>' +
       '<span class="od">'+o[2]+'</span></span></button>').join('') + '</div>';
