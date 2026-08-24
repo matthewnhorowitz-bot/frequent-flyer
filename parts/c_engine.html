@@ -20,9 +20,9 @@ function newPlayer(name, home, target){
   return {
     id: uid(), name, home, at: home,
     miles: START_MILES,
-    /* Home is marked off in full at setup — once in the standard game, both
-       times in the 40-city game. Nobody spends a landing banking their own
-       home city's second visit. */
+    /* Home is marked off in full at setup — once in the standard game, every
+       time the longer games ask for. Nobody spends a landing banking their own
+       home city's repeat visits. */
     visited: Array(maxVisits(target)).fill(home),
     hand: [],            // card ids held
     skip: 0,             // turns to miss
@@ -59,10 +59,16 @@ function wipe(){ try{ localStorage.removeItem(KEY); }catch(e){} }
 const cur = () => G.players[G.turn];
 const byId = id => G.players.find(p=>p.id===id);
 const opponents = p => G.players.filter(x=>x.id!==p.id);
-/* The 40-city game is the 20-city board played to two visits per city, in any
-   order — you may hit the same city twice before touching the others. So
-   `visited` is a list that may hold a city twice, not a set. */
-const maxVisits    = t => (t === undefined ? G.target : t) > CITIES.length ? 2 : 1;
+/* Every game length is the 20-city board played to N visits per city, in any
+   order — you may hit the same city its full count before touching the others.
+   So `visited` is a list that may hold a city more than once, not a set. The
+   target is always a whole number of laps of the board (20, 40, 60), so the
+   lap count is the divide. */
+const maxVisits    = t => Math.ceil((t === undefined ? G.target : t) / CITIES.length);
+/* "once / twice / three times" — the phrase a rule reads with, not a bare
+   number, since every use of it sits mid-sentence. */
+const timesWord    = n => n === 1 ? 'once' : n === 2 ? 'twice'
+                        : n === 3 ? 'three times' : n + ' times';
 const visitCount   = (p,c) => p.visited.reduce((n,x)=>n+(x===c?1:0), 0);
 const visitedCount = p => p.visited.length;
 const canVisit     = (p,c) => visitCount(p,c) < maxVisits();
@@ -178,8 +184,8 @@ function applyFx(p, fx, ans, notes){
   if(fx.milesIf){
     const {cities, mode, amount, full} = fx.milesIf;
     /* A `full` card wants every visit the game length asks for — Graceland
-       needs Memphis twice in the 40-city game — where the rest only ask
-       whether you have been there at all. */
+       needs Memphis twice in the 40-city game and three times in the 60 —
+       where the rest only ask whether you have been there at all. */
     const seen = full ? (c => visitCount(p,c) >= maxVisits()) : (c => hasVisited(p,c));
     const ok = mode === 'all'  ? cities.every(c=>seen(c))
              : mode === 'none' ? cities.every(c=>!seen(c))
@@ -256,13 +262,22 @@ function applyFx(p, fx, ans, notes){
   else if(typeof fx.fly === 'string') dest = fx.fly;
 
   if(dest){
-    const already = hasVisited(p, dest);
+    /* "Already visited" is the card's way of saying this flight is wasted — the
+       city is finished, so miles are what you get instead of a tick. One visit
+       doesn't finish a city in a longer game, so it doesn't pay there either.
+       Read before landing, since landing is what would complete it. */
+    const done = visitCount(p, dest) >= maxVisits();
     const r = land(p, dest, !!fx.flyEarns, true);
     notes.push('Flew to '+cityName(dest)+(r.earned?' (+'+fmt(r.earned)+' miles)':' (no miles)'));
     if(r.bonus) notes.push('+'+fmt(r.bonus)+' bounty collected');
-    if(fx.bonusIfVisited && already && fx.bonusIfVisited.city === dest){
-      addMiles(p, fx.bonusIfVisited.amount);
-      notes.push('+'+fmt(fx.bonusIfVisited.amount)+' bonus (already visited)');
+    if(fx.bonusIfVisited && fx.bonusIfVisited.city === dest){
+      if(done){
+        addMiles(p, fx.bonusIfVisited.amount);
+        notes.push('+'+fmt(fx.bonusIfVisited.amount)+' bonus (already visited' +
+          (maxVisits() > 1 ? ' '+timesWord(maxVisits()) : '') + ')');
+      } else notes.push(maxVisits() > 1
+        ? 'No bonus — needs '+cityName(dest)+' visited '+timesWord(maxVisits())
+        : 'No bonus — not visited before');
     }
   }
 }
@@ -513,7 +528,15 @@ const SHARE_URL = 'https://matthewnhorowitz-bot.github.io/frequent-flyer/';
    it, which is a failure mode the UI already handles. */
 const cryptoOn = () => !!(window.crypto && window.crypto.subtle);
 const syncOn  = () => !!(SYNC_URL && SYNC_KEY && cryptoOn());
-const gameUrl = code => SHARE_URL + '#' + code;
+/* The link carries both halves — code and password — so sending it is the whole
+   of inviting someone. `/` is the separator precisely because
+   encodeURIComponent escapes it, so it can never turn up inside the password
+   half and split the hash in the wrong place.
+   Note this hands read access to anyone the link reaches. What it doesn't do is
+   leak: a fragment is never sent in an HTTP request, so neither the host nor the
+   database ever sees the password — it stays between the link and the browser. */
+const gameUrl = (code, pass) => SHARE_URL + '#' + code +
+  (pass ? '/' + encodeURIComponent(pass) : '');
 
 /* One row per game, keyed by the four-digit code. `cols` keeps the reply down to
    what's actually wanted — the poll asks for `rev` alone, three bytes of answer. */
@@ -723,7 +746,7 @@ const passLoad = code => { try{ return localStorage.getItem(passSlot(code)) || '
 const passSave = (code,p) => { try{ localStorage.setItem(passSlot(code), p); }catch(e){} };
 const passDrop = code => { try{ localStorage.removeItem(passSlot(code)); }catch(e){} };
 
-function bootView(code){
+function bootView(code, pass){
   VIEW = true;
   UI = {screen:'loading', sub:null, tmp:{}, code};
   render();
@@ -732,8 +755,10 @@ function bootView(code){
     if(document.hidden) pollOff();
     else if(G){ pollOn(); pollShare(); }
   });
-  // Try what we were given last time before putting a password box in the way.
-  pullShare(passLoad(code)).then(ok => { if(ok) pollOn(); });
+  /* The link's own password first, then whatever this phone was given last time,
+     before putting a password box in the way. A link that worked is remembered,
+     so a later visit to the bare code still opens. */
+  pullShare(pass || passLoad(code)).then(ok => { if(ok){ passSave(code, viewPass); pollOn(); } });
 }
 
 function viewerKey(env, cand){

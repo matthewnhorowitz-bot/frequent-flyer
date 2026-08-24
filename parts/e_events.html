@@ -115,7 +115,7 @@ app.addEventListener('click', e => {
     case 'viewunlock': unlockView(UI.tmp.pass); break;
 
     case 'sharecopy': {
-      const url = gameUrl(G.share.code);
+      const url = gameUrl(G.share.code, G.share.pass);
       if(navigator.share)
         navigator.share({title:'Frequent Flyer', text:'Follow the game — code '+G.share.code, url}).catch(()=>{});
       else if(navigator.clipboard)
@@ -233,8 +233,12 @@ app.addEventListener('click', e => {
     /* --- misc --- */
     case 'togglecity': toggleCity(v); render(); break;
 
+    /* Patched in place rather than re-rendered, so tapping the sign doesn't
+       take the keyboard down while someone is still typing the amount. */
+    case 'adjsign': UI.tmp.sign = +v; paintAdjust(); break;
+
     case 'doadjust':
-      adjustMiles(parseInt(UI.tmp.amt,10), (UI.tmp.why||'').trim());
+      adjustMiles(adjDelta(), (UI.tmp.why||'').trim());
       UI.sub=null; UI.tmp={}; render(); break;
 
     case 'endturn':
@@ -264,13 +268,15 @@ app.addEventListener('input', e => {
   // The adjust screen has a live preview. Patch it in place rather than
   // re-rendering, so the number field keeps focus while you type.
   if(UI.sub === 'adjust' && k === 'amt'){
-    const n = parseInt(val,10);
-    const btn = document.getElementById('adjBtn');
-    const prev = document.getElementById('adjPrev');
-    const bal = document.getElementById('adjBal');
-    if(btn) btn.disabled = !n;
-    if(prev) prev.style.display = n ? '' : 'none';
-    if(bal) bal.textContent = fmt(cur().miles + (n||0));
+    /* A typed minus is the old way of subtracting and still works — it just
+       moves the sign to where the sign now lives. Safe to strip mid-typing:
+       a minus can only be the first character, so the caret is already at the
+       end and doesn't jump. */
+    if(val.indexOf('-') >= 0){
+      UI.tmp.sign = -1;
+      UI.tmp.amt = el.value = val.replace(/-/g,'');
+    }
+    paintAdjust();
     return;
   }
 
@@ -314,10 +320,16 @@ app.addEventListener('input', e => {
    Boot
    ========================================================================== */
 (function boot(){
-  /* A share link's whole payload is its hash — #4206 — so one pattern test
-     separates "watch this game" from an ordinary visit. */
-  const code = decodeURIComponent((location.hash||'').replace(/^#\/?/,'')).trim();
-  if(syncOn() && SHARE_CODE.test(code)) return bootView(code);
+  /* A share link's whole payload is its hash — #4206 for the code alone, or
+     #4206/aisle-runway when it carries the password too — so one pattern test
+     separates "watch this game" from an ordinary visit. Split before decoding:
+     the `/` survives as a separator only because encodeURIComponent escaped any
+     `/` inside the password half. */
+  const raw  = (location.hash||'').replace(/^#\/?/,'');
+  const cut  = raw.indexOf('/');
+  const code = decodeURIComponent(cut < 0 ? raw : raw.slice(0, cut)).trim();
+  const pass = cut < 0 ? '' : decodeURIComponent(raw.slice(cut + 1));
+  if(syncOn() && SHARE_CODE.test(code)) return bootView(code, pass);
 
   const saved = load();
   if(saved && saved.status === 'playing'){ G = saved; UI.screen = 'start'; }
@@ -335,6 +347,9 @@ window.addEventListener('hashchange', () => location.reload());
   if(CARDS.filter(c=>c.deck==='coach').length !== 45) errs.push('coach deck is not 45 cards');
   if(CARDS.filter(c=>c.deck==='first').length !== 25) errs.push('first class deck is not 25 cards');
   if(CITIES.length !== 20) errs.push('city list is not 20 cities');
+  /* Every length must be a whole number of laps of the board, or maxVisits
+     rounds up and the last lap asks for cities that can't be reached. */
+  LENGTHS.forEach(o => { if(o[0] % CITIES.length) errs.push('game length '+o[0]+' is not a whole number of laps'); });
   for(let i=0;i<20;i++){
     if(MILEAGE[i][i] !== 0) errs.push('non-zero diagonal at '+CITIES[i].id);
     for(let j=i+1;j<20;j++) if(MILEAGE[i][j] !== MILEAGE[j][i])

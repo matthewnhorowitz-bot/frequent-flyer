@@ -458,18 +458,22 @@
     transition:background .18s ease,border-color .18s ease,color .18s ease}
   /* Done is the only loud state, and it is green — a filled ground, a green
      edge and a tick, so a finished city reads as crossed off rather than as
-     merely highlighted. Half-done (the 40-city game's one-of-two) borrows the
-     same green at outline weight, which puts the two states on one scale
-     instead of two unrelated colours. */
+     merely highlighted. Part-done borrows the same green at outline weight,
+     which puts the states on one scale instead of unrelated colours. Two
+     strengths, because the 60-city game has two part-done steps and one-of-
+     three must not look like two-of-three; the 40-city game only ever uses the
+     paler one, so it looks exactly as it did. */
   .chip.v1{border-color:color-mix(in srgb,var(--done) 45%,var(--line));
     color:var(--done);background:color-mix(in srgb,var(--doneFill) 45%,var(--surface))}
+  .chip.v2{border-color:color-mix(in srgb,var(--done) 80%,var(--line));
+    color:var(--done);background:color-mix(in srgb,var(--doneFill) 85%,var(--surface))}
   .chip.on{background:var(--doneFill);border-color:var(--doneEdge);color:var(--done)}
   .chip.on::after{content:'✓';font-size:11px;font-weight:800;line-height:1}
   /* Board number, so a chip can be matched against the board without counting. */
   .chip .cn{font-weight:800;opacity:.45;font-variant-numeric:tabular-nums;font-size:11px}
   .chip.on .cn{opacity:.6}
-  /* The visit counter in the 40-city game. A flex item can't be vertical-align:
-     super, so it is nudged instead. */
+  /* The visit counter in the games that ask for repeat visits. A flex item
+     can't be vertical-align:super, so it is nudged instead. */
   .chip i{font-style:normal;font-size:9px;opacity:.85;transform:translateY(-4px)}
   /* The home marker rides in the corner rather than in the line of text — at
      four to a row there is no width to spare for a fifth glyph. Left, because

@@ -59,13 +59,16 @@ const REDEEM = { CHOOSE:5000, FIRSTCLASS:10000, AUTO:20000 };
      miles          delta applied to the current player
      milesIf        {cities:[], mode:'all'|'any'|'none', amount, full}
                     full — the cities must be visited as many times as the game
-                    length requires (twice in the 40-city game), not just once
+                    length requires (twice in the 40-city game, three times in
+                    the 60), not just once
      collectEach    each opponent pays the current player this amount
      fly            city id | 'choose' | 'home' | [ids]   (relocate + check off)
      flyEarns       whether that flight earns mileage
      flyIfNot       city id — only fly if NOT yet visited
      flyIfNotElse   text shown when the condition fails
-     bonusIfVisited {city, amount} — extra bonus when already visited
+     bonusIfVisited {city, amount} — extra bonus when the flight lands on a
+                    city already visited every time the game length asks for,
+                    i.e. one the flight can no longer tick off
      oppFly         city id — a chosen opponent is forced to fly there (no miles)
      addCity        'choose' — add a city to the checklist without flying
      stealCity      true — take a city from an opponent

@@ -53,15 +53,18 @@ function header(title, backTo){
     '</div></div>';
 }
 
-/* Grey = not yet, pale green = one visit, green with a tick = done. In the
-   40-city game a city needs two visits, so the middle state is the one that
-   matters — hence one green at two strengths rather than two colours. */
+/* Grey = not yet, green with a tick = done, and the part-done states in
+   between are the same green at rising strength rather than colours of their
+   own. The 40-city game has one middle state; the 60-city game has two, so the
+   last visit before done gets the stronger green and everything earlier the
+   pale one. */
 function cityChips(p){
   const max = maxVisits();
   return '<div class="chips">' + CITIES.map(c=>{
     const n = visitCount(p, c.id);
     const cls = ['chip'];
-    if(n >= max) cls.push('on'); else if(n > 0) cls.push('v1');
+    if(n >= max) cls.push('on');
+    else if(n > 0) cls.push(max > 2 && n >= max - 1 ? 'v2' : 'v1');
     if(c.id===p.home) cls.push('home');
     if(c.id===p.at) cls.push('here');
     return '<span class="'+cls.join(' ')+'"><span class="cn">'+c.n+'</span>'+c.id +
@@ -165,8 +168,13 @@ function screenCount(){
 
 const LENGTHS = [
   [20,'Standard game','All 20 cities, once each.'],
-  [40,'Long game','Every city twice, in any order.']
+  [40,'Long game','Every city twice, in any order.'],
+  [60,'Marathon game','Every city three times, in any order.']
 ];
+/* The name of the length in play, for the places that call it out by name.
+   Falls back to a description rather than a blank if a save carries a target
+   no longer on the menu. */
+const lengthName = () => (LENGTHS.find(o => o[0] === G.target) || [0, G.target+'-city game'])[1];
 
 function screenSetup(){
   const n = UI.tmp.count;
@@ -195,7 +203,7 @@ function screenSetup(){
   h += '<div class="card"><h3 style="font-size:16px">Game length</h3>' +
     '<p class="hint" style="margin:6px 0 12px">Reach this many stops, then fly home to win. ' +
     (maxVisits(target) > 1
-      ? 'Your home city is marked off twice from the start.'
+      ? 'Your home city is marked off '+timesWord(maxVisits(target))+' from the start.'
       : 'Your home city counts as your first.') + '</p>' +
     LENGTHS.map(o => '<button class="opt'+(target===o[0]?' on':'')+'" data-act="target" data-v="'+o[0]+'">' +
       '<span class="rd"></span><span><span class="ot">'+o[0]+' cities · '+o[1]+'</span>' +
@@ -357,7 +365,7 @@ function screenWin(){
   h += '<div class="card"><div class="stat"><div class="n">'+fmt(w.miles)+'</div>' +
     '<div class="l">Final mileage balance</div></div>' +
     '<p class="center tiny muted">' + (maxVisits()>1
-      ? 'Visited all 20 cities twice — 40 stops'
+      ? 'Visited all '+CITIES.length+' cities '+timesWord(maxVisits())+' — '+G.target+' stops'
       : 'Visited all '+G.target+' cities') +
     ' and returned home to '+esc(cityName(w.home))+'.</p></div>';
   h += '<div class="card"><h3 style="font-size:15px;margin-bottom:10px">Final standings</h3>' +
@@ -418,12 +426,19 @@ function subCard(){
     '<div class="gx">'+esc(c.text)+'</div>' +
     (c.footer?'<div class="gf">'+esc(c.footer)+'</div>':'') + '</div>';
 
-  /* The card face is reproduced verbatim from the printed card, so where the
-     40-city game reads it differently that goes underneath rather than into
+  /* The card face is reproduced verbatim from the printed card, so where a
+     longer game reads it differently that goes underneath rather than into
      the text. */
   if(c.fx.milesIf && c.fx.milesIf.full && maxVisits() > 1){
-    h += '<div class="banner">'+ico('target')+' Long game: this bonus needs ' +
+    h += '<div class="banner">'+ico('target')+' '+esc(lengthName())+': this bonus needs ' +
       maxVisits()+' visits to '+esc(c.fx.milesIf.cities.map(x=>cityName(x)).join(' and '))+
+      ', not one.</div>';
+  }
+  /* Same reading of "already visited": the bonus stands in for a tick, so it
+     only pays once the city can't be ticked off again. */
+  if(c.fx.bonusIfVisited && maxVisits() > 1){
+    h += '<div class="banner">'+ico('target')+' '+esc(lengthName())+': this bonus needs ' +
+      maxVisits()+' earlier visits to '+esc(cityName(c.fx.bonusIfVisited.city))+
       ', not one.</div>';
   }
 
@@ -600,7 +615,8 @@ function subCities(){
   let h = header('Destination checklist', 1);
   const max = maxVisits();
   h += '<p class="hint">' + (max>1
-    ? 'Tap a city to cycle it for '+esc(p.name)+': not visited → once → twice → not visited.'
+    ? 'Tap a city to cycle it for '+esc(p.name)+': not visited → ' +
+      Array.from({length:max},(_,i)=>timesWord(i+1)).join(' → ') + ' → not visited.'
     : 'Tap to check or uncheck a city for '+esc(p.name)+'.') +
     ' Use this to fix a mistake.</p><div class="list">';
   h += CITIES.map(c=>'<button class="row" data-act="togglecity" data-v="'+c.id+'">' +
@@ -611,17 +627,55 @@ function subCities(){
   return h;
 }
 
+/* Direction is the toggle's job and magnitude is the box's, so the two can't
+   contradict each other however the number was typed. */
+const adjSign  = () => UI.tmp.sign === -1 ? -1 : 1;
+/* `|| 0` for the empty box: the sign would otherwise make it a negative zero,
+   which prints as "-0". */
+const adjDelta = () => adjSign() * Math.abs(parseInt(UI.tmp.amt,10) || 0) || 0;
+
+/* Repaint the parts of the adjust screen that depend on the amount, in place.
+   A full render would take the keyboard down mid-entry, which on a phone is the
+   difference between usable and not — so both the typing handler and the sign
+   buttons come through here instead. */
+function paintAdjust(){
+  const n = adjDelta();
+  const btn  = document.getElementById('adjBtn');
+  const prev = document.getElementById('adjPrev');
+  const amt  = document.getElementById('adjAmt');
+  const bal  = document.getElementById('adjBal');
+  const plus = document.getElementById('adjPlus');
+  const minus= document.getElementById('adjMinus');
+  if(btn)  btn.disabled = !n;
+  if(prev) prev.style.display = n ? '' : 'none';
+  if(amt)  amt.textContent = (n>0?'+':'') + fmt(n);
+  if(bal)  bal.textContent = fmt(cur().miles + n);
+  if(plus)  plus.className  = 'btn' + (adjSign() > 0 ? ' primary' : '');
+  if(minus) minus.className = 'btn' + (adjSign() < 0 ? ' primary' : '');
+}
+
 function subAdjust(){
   const p = cur();
+  const n = adjDelta();
   let h = header('Adjust miles', 1);
   h += '<p class="hint">Manual correction for '+esc(p.name)+'. Logged like any other action so it can be undone.</p>';
-  h += '<div class="card"><label class="fld"><span>Amount (use a minus sign to subtract)</span>' +
-    '<input type="number" data-in="amt" value="'+esc(UI.tmp.amt||'')+'" placeholder="e.g. 500 or -500" inputmode="numeric"></label>' +
+  /* A div, not a label: a label wrapping a button swallows the button's own
+     click — the same reason the city field next door isn't one. */
+  h += '<div class="card"><div class="fld"><span>Add or subtract</span>' +
+    '<div class="btn-row">' +
+      '<button type="button" id="adjPlus" class="btn'+(adjSign()>0?' primary':'')+'" ' +
+        'data-act="adjsign" data-v="1" style="text-align:center">+ Add</button>' +
+      '<button type="button" id="adjMinus" class="btn'+(adjSign()<0?' primary':'')+'" ' +
+        'data-act="adjsign" data-v="-1" style="text-align:center">− Subtract</button>' +
+    '</div></div>' +
+    '<label class="fld"><span>Amount</span>' +
+    '<input type="number" data-in="amt" value="'+esc(UI.tmp.amt||'')+'" placeholder="e.g. 500" ' +
+      'min="0" inputmode="numeric"></label>' +
     '<label class="fld" style="margin:0"><span>Reason (optional)</span>' +
     '<input type="text" data-in="why" value="'+esc(UI.tmp.why||'')+'" placeholder="e.g. house rule"></label></div>';
-  const n = parseInt(UI.tmp.amt,10);
   h += '<div class="card" id="adjPrev"'+(n?'':' style="display:none"')+'>' +
-    '<div class="kv"><span>New balance</span><b id="adjBal">'+fmt(p.miles+(n||0))+'</b></div></div>';
+    '<div class="kv"><span>Adjustment</span><b id="adjAmt">'+(n>0?'+':'')+fmt(n)+'</b></div>' +
+    '<div class="kv"><span>New balance</span><b id="adjBal">'+fmt(p.miles+n)+'</b></div></div>';
   h += '<button class="btn primary big" id="adjBtn" data-act="doadjust" '+(n?'':'disabled')+'>Apply adjustment</button>';
   return h;
 }
@@ -857,8 +911,9 @@ function shareCard(){
   return '<div class="card"><h3 class="sechd">Sharing live</h3>' +
     '<div class="codebig">'+esc(s.code)+'</div>' +
     '<div class="passbig">'+esc(s.pass)+'</div>' +
-    '<p class="tiny muted center" style="margin:0 0 12px">Read both out. The link carries the code — ' +
-    'the password never travels with it, so say that part yourself.</p>' +
+    '<p class="tiny muted center" style="margin:0 0 12px">The link carries both, so sending it ' +
+    'is all anyone needs — and anyone it reaches can watch. These are here for whoever would ' +
+    'rather type them in.</p>' +
     '<div id="syncState">'+syncStatus()+'</div>' +
     '<div class="btn-row">' +
       '<button class="btn" data-act="sharecopy" style="text-align:center">' +
