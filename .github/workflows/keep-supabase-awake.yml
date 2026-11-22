@@ -1,0 +1,93 @@
+# Keeps the live-sharing backend from going to sleep.
+#
+# Supabase pauses a free project after about a week of no traffic, and a paused
+# project loses its DNS record — so the first anyone hears of it is every share
+# link saying "Can't reach the game", which reads as the whole app being broken.
+# That is exactly what happened in November 2026. One read a day is enough to
+# keep the project counted as active.
+#
+# This runs on GitHub's machines rather than a laptop on purpose: the game can
+# go months between sessions, and a cron job on a closed laptop keeps nothing
+# awake.
+
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 07:12 UTC daily. Not on the hour: GitHub queues the whole world's
+    # on-the-hour jobs at once, and a crowded minute is the one that gets
+    # dropped. Daily rather than weekly so a single skipped run is harmless —
+    # the project only pauses after ~7 quiet days.
+    - cron: '12 7 * * *'
+  workflow_dispatch:        # so it can be run by hand from the Actions tab
+
+# Needed only for the keepalive commit in the last step.
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read one row from the games table
+        env:
+          # The project's *publishable* key. It is already public — it ships in
+          # the page at matthewnhorowitz-bot.github.io/frequent-flyer/ — so it
+          # is no more exposed here. The secret / service_role key must never
+          # appear in this file.
+          SYNC_URL: https://mfjibppjqcodmrshfjbt.supabase.co
+          SYNC_KEY: sb_publishable_BJ02mjBe1S6_56ZioeEC5g_RlDi7SFu
+        run: |
+          set -euo pipefail
+
+          # A paused project can take a few minutes to answer while it wakes,
+          # and it climbs back through Cloudflare 521s and a PostgREST 404
+          # ("schema cache") on the way, so give it several tries before
+          # calling it a failure.
+          for attempt in 1 2 3 4 5 6; do
+            http=$(curl -sS -m 30 -o /tmp/body.txt -w '%{http_code}' \
+              -H "apikey: $SYNC_KEY" \
+              -H "Authorization: Bearer $SYNC_KEY" \
+              "$SYNC_URL/rest/v1/games?select=code&limit=1" || echo 000)
+
+            if [ "$http" = "200" ]; then
+              echo "::notice::Supabase answered 200 on attempt $attempt — project is awake."
+              exit 0
+            fi
+
+            echo "attempt $attempt: HTTP $http $(head -c 200 /tmp/body.txt || true)"
+            if [ "$attempt" -lt 6 ]; then sleep 60; fi
+          done
+
+          echo "::error::Supabase did not answer 200 after 6 attempts over ~5 minutes."
+          echo "If this keeps failing the project may be paused or deleted — check"
+          echo "https://supabase.com/dashboard/project/mfjibppjqcodmrshfjbt"
+          exit 1
+
+      - name: Keep the schedule itself alive
+        # GitHub disables a repository's scheduled workflows after 60 days with
+        # no activity, which would quietly undo the whole point of this file.
+        # A push counts as activity, so park a timestamp on a branch of its own.
+        # It is amended and force-pushed rather than appended, so the branch
+        # stays one commit forever and main's history is untouched.
+        run: |
+          set -euo pipefail
+          # No actions/checkout above: nothing here needs the repo's contents,
+          # and this branch is a fresh history every time anyway.
+          rm -rf keepalive && mkdir keepalive && cd keepalive
+          git init -q -b keepalive
+          # Must come after `git init` — `git config` without --global has no
+          # repository to write to before that.
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          date -u '+%Y-%m-%dT%H:%M:%SZ' > last-ping.txt
+          echo 'Written by .github/workflows/keep-supabase-awake.yml on main.' >> last-ping.txt
+          echo 'Its only job is to give the repo recent activity, so GitHub does' >> last-ping.txt
+          echo 'not disable that scheduled workflow after 60 quiet days.' >> last-ping.txt
+          git add last-ping.txt
+          git commit -q -m "Supabase pinged $(date -u '+%Y-%m-%d')"
+          git push -q --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            keepalive
+          echo "::notice::keepalive branch refreshed."
