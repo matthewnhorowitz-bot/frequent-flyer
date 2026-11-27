@@ -1,0 +1,4 @@
+2026-11-27T17:25:41Z
+Written by .github/workflows/keep-supabase-awake.yml on main.
+Its only job is to give the repo recent activity, so GitHub does
+not disable that scheduled workflow after 60 quiet days.
